@@ -61,24 +61,56 @@
     <br />
     Payload:<br /><textarea name="payload" rows="5" cols="75" id="payload"></textarea><br />
     Load using:<br />
-    tcp/udp/http: <input type="radio" name="runner" value="http/tcp/udp" checked/>
+    tcp/udp/http: <input type="radio" name="runner" value="http/tcp/udp" checked onchange="toggleKafkaFields()"/>
     (https insecure:<input type="checkbox" name="https-insecure" />,
     standard go client instead of fastclient:<input type="checkbox" name="stdclient" checked/>,
     h2: <input type="checkbox" name="h2"/>,
     sequential warmup: <input type="checkbox" name="sequential-warmup"/>,
     resolve: <input type="text" name="resolve" size="12" value="" />)
     <br />&nbsp;&nbsp;or<br />
-    grpc: <input type="radio" name="runner" value="grpc"/>
+    grpc: <input type="radio" name="runner" value="grpc" onchange="toggleKafkaFields()"/>
     (grpc secure transport (tls):<input type="checkbox" name="grpc-secure" />,
     using ping backend:<input type="checkbox" name="ping" />,
     ping delay: <input type="text" name="grpc-ping-delay" size="6" value="0" />,
     health service: <input type="text" name="healthservice" size="6" value="" />) <br />
+    &nbsp;&nbsp;or<br />
+    kafka: <input type="radio" name="runner" value="kafka" onchange="toggleKafkaFields()"/>
+    (bootstrap servers: <input type="text" name="kafka-bootstrap" id="kafka-bootstrap" size="40" value="localhost:9092" />,
+    topic: <input type="text" name="kafka-topic" id="kafka-topic" size="20" value="" />,
+    collect kafka metrics: <input type="checkbox" name="kafka-metrics" id="kafka-metrics" />) <br />
     JSON output:<input type="checkbox" name="json" />,
     Save output:<input type="checkbox" name="save" checked />) <br />
     Timeout: <input type="text" name="timeout" size="12" value="750ms" /> <br />
     <input type="submit" name="load" value="Start"/>
   </div>
 </form>
+<script>
+function toggleKafkaFields() {
+  const kafkaRunner = document.querySelector('input[name="runner"][value="kafka"]');
+  const urlField = document.querySelector('input[name="url"]').parentElement;
+  const kafkaBootstrap = document.getElementById('kafka-bootstrap');
+  const kafkaTopic = document.getElementById('kafka-topic');
+  const kafkaMetrics = document.getElementById('kafka-metrics');
+  
+  if (kafkaRunner && kafkaRunner.checked) {
+    urlField.style.display = 'none';
+    if (kafkaBootstrap) kafkaBootstrap.required = true;
+    if (kafkaTopic) kafkaTopic.required = true;
+  } else {
+    urlField.style.display = '';
+    if (kafkaBootstrap) kafkaBootstrap.required = false;
+    if (kafkaTopic) kafkaTopic.required = false;
+  }
+}
+// Call on page load to set initial state
+document.addEventListener('DOMContentLoaded', function() {
+  toggleKafkaFields();
+  // Also call when other runners are selected
+  document.querySelectorAll('input[name="runner"]').forEach(function(radio) {
+    radio.addEventListener('change', toggleKafkaFields);
+  });
+});
+</script>
 <p><i>Or</i></p>
 <div>
   Browse <a href='browse'>saved results</a> (or <a href="data/">raw JSON</a>)

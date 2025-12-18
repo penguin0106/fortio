@@ -47,8 +47,12 @@ require (
 	github.com/bufbuild/protocompile v0.14.1 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/jbuchbinder/gopnm v0.0.0-20220507095634-e31f54490ce0 // indirect
+	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/kortschak/goroutine v1.1.3 // indirect
+	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/twmb/franz-go v1.20.5 // indirect
+	github.com/twmb/franz-go/pkg/kmsg v1.12.0 // indirect
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20250406160420-959f8f3db0fb // indirect
 	golang.org/x/image v0.30.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect

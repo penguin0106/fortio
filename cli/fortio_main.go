@@ -37,6 +37,7 @@ import (
 	"fortio.org/fortio/fhttp"
 	"fortio.org/fortio/fnet"
 	"fortio.org/fortio/grol"
+	"fortio.org/fortio/kafkarunner"
 	"fortio.org/fortio/periodic"
 	"fortio.org/fortio/rapi"
 	"fortio.org/fortio/stats"
@@ -51,7 +52,7 @@ import (
 
 // fortio's help/args message.
 func helpArgsString() string {
-	return fmt.Sprintf("target\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s",
+	return fmt.Sprintf("target\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s",
 		"where command is one of: load (load testing), server (starts ui, rest api,",
 		" http-echo, redirect, proxies, tcp-echo, udp-echo and grpc ping servers), ",
 		" tcp-echo (only the tcp-echo server), udp-echo (only udp-echo server),",
@@ -61,7 +62,8 @@ func helpArgsString() string {
 		" or script (interactive grol script mode or script file),",
 		" or version (prints the full version and build details).",
 		"where target is a URL (http load tests) or host:port (grpc health test),",
-		" or tcp://host:port (tcp load test), or udp://host:port (udp load test).")
+		" or tcp://host:port (tcp load test), or udp://host:port (udp load test),",
+		" or any URL for Kafka load test (requires -kafka-bootstrap and -kafka-topic flags).")
 }
 
 // Attention: every flag that is common to HTTP client goes to bincommon/
@@ -157,6 +159,11 @@ var (
 		"`format` for access log. Supported values: [json, influx]")
 	calcQPS = flag.Bool("calc-qps", false, "Calculate the qps based on number of requests (-n) and duration (-t)")
 	pprofOn = flag.Bool("pprof", false, "Enable pprof HTTP endpoint in the Web UI handler server")
+	// Kafka related flags
+	kafkaBootstrapFlag = flag.String("kafka-bootstrap", "",
+		"Kafka bootstrap servers as comma-separated list (e.g., 'localhost:9092,localhost:9093')")
+	kafkaTopicFlag   = flag.String("kafka-topic", "", "Kafka topic to produce messages to")
+	kafkaMetricsFlag = flag.Bool("kafka-metrics", false, "Collect and display Kafka broker metrics")
 )
 
 // serverArgCheck always returns true after checking arguments length.
@@ -358,8 +365,21 @@ func fortioNC() {
 
 //nolint:funlen // maybe refactor/shorten later.
 func fortioLoad(justCurl bool, percList []float64) {
-	if len(flag.Args()) != 1 {
+	// Kafka load test doesn't require URL argument
+	isKafkaLoad := *kafkaBootstrapFlag != "" && *kafkaTopicFlag != ""
+	if !isKafkaLoad && len(flag.Args()) != 1 {
 		cli.ErrUsage("Error: fortio load/curl needs a URL or destination")
+	}
+	// For Kafka load, provide dummy URL if no args provided (SharedHTTPOptions needs it)
+	if isKafkaLoad && len(flag.Args()) == 0 {
+		// Temporarily set a dummy arg for SharedHTTPOptions
+		os.Args = append(os.Args, "kafka://dummy")
+		defer func() {
+			// Restore original args
+			if len(os.Args) > 0 {
+				os.Args = os.Args[:len(os.Args)-1]
+			}
+		}()
 	}
 	httpOpts := bincommon.SharedHTTPOptions()
 	if justCurl {
@@ -369,6 +389,9 @@ func fortioLoad(justCurl bool, percList []float64) {
 		return
 	}
 	url := httpOpts.URL
+	if isKafkaLoad {
+		url = fmt.Sprintf("kafka://%s/%s", *kafkaBootstrapFlag, *kafkaTopicFlag)
+	}
 	prevGoMaxProcs := runtime.GOMAXPROCS(*goMaxProcsFlag)
 	out := os.Stderr
 	qps := *qpsFlag // TODO possibly use translated <=0 to "max" from results/options normalization in periodic/
@@ -464,6 +487,22 @@ func fortioLoad(justCurl bool, percList []float64) {
 		o.Destination = url
 		o.Payload = httpOpts.Payload
 		res, err = udprunner.RunUDPTest(&o)
+	case *kafkaBootstrapFlag != "" && *kafkaTopicFlag != "":
+		// Parse bootstrap servers
+		bootstrapServers := strings.Split(*kafkaBootstrapFlag, ",")
+		for i := range bootstrapServers {
+			bootstrapServers[i] = strings.TrimSpace(bootstrapServers[i])
+		}
+		o := kafkarunner.RunnerOptions{
+			RunnerOptions: ro,
+			KafkaOptions: kafkarunner.KafkaOptions{
+				BootstrapServers: bootstrapServers,
+				Topic:            *kafkaTopicFlag,
+				Payload:          httpOpts.Payload,
+				CollectMetrics:   *kafkaMetricsFlag,
+			},
+		}
+		res, err = kafkarunner.RunKafkaTest(&o)
 	default:
 		o := fhttp.HTTPRunnerOptions{
 			HTTPOptions:        *httpOpts,

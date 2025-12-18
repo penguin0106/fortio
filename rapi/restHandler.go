@@ -33,6 +33,7 @@ import (
 	"fortio.org/fortio/fhttp"
 	"fortio.org/fortio/fnet"
 	"fortio.org/fortio/jrpc"
+	"fortio.org/fortio/kafkarunner"
 	"fortio.org/fortio/periodic"
 	"fortio.org/fortio/stats"
 	"fortio.org/fortio/tcprunner"
@@ -271,9 +272,19 @@ func RESTRunHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen //
 		percList = DefaultPercentileList
 	}
 	n, _ := strconv.ParseInt(FormValue(r, jd, "n"), 10, 64)
-	if strings.TrimSpace(url) == "" {
+	// For Kafka, URL is optional if bootstrap and topic are provided
+	isKafka := runner == "kafka" || strings.HasPrefix(url, kafkarunner.KafkaURLPrefix)
+	if strings.TrimSpace(url) == "" && !isKafka {
 		Error(w, "URL is required", nil)
 		return
+	}
+	// For Kafka, construct URL from bootstrap and topic if URL is empty
+	if isKafka && strings.TrimSpace(url) == "" {
+		kafkaBootstrap := FormValue(r, jd, "kafka-bootstrap")
+		kafkaTopic := FormValue(r, jd, "kafka-topic")
+		if kafkaBootstrap != "" && kafkaTopic != "" {
+			url = fmt.Sprintf("%s%s/%s", kafkarunner.KafkaURLPrefix, kafkaBootstrap, kafkaTopic)
+		}
 	}
 	ro := periodic.RunnerOptions{
 		QPS:         qps,
@@ -414,6 +425,45 @@ func Run(w http.ResponseWriter, r *http.Request, jd map[string]any,
 		o.Payload = httpopts.Payload
 		aborter = UpdateRun(&o.RunnerOptions)
 		res, err = udprunner.RunUDPTest(&o)
+	case runner == "kafka" || strings.HasPrefix(url, kafkarunner.KafkaURLPrefix):
+		// Kafka load test
+		kafkaBootstrap := FormValue(r, jd, "kafka-bootstrap")
+		kafkaTopic := FormValue(r, jd, "kafka-topic")
+		kafkaMetrics := (FormValue(r, jd, "kafka-metrics") == "on")
+		// If URL has kafka:// prefix, try to parse bootstrap and topic from it
+		if strings.HasPrefix(url, kafkarunner.KafkaURLPrefix) {
+			// Format: kafka://bootstrap1,bootstrap2/topic
+			urlPart := strings.TrimPrefix(url, kafkarunner.KafkaURLPrefix)
+			parts := strings.SplitN(urlPart, "/", 2)
+			if len(parts) == 2 {
+				if kafkaBootstrap == "" {
+					kafkaBootstrap = parts[0]
+				}
+				if kafkaTopic == "" {
+					kafkaTopic = parts[1]
+				}
+			}
+		}
+		if kafkaBootstrap == "" || kafkaTopic == "" {
+			err = fmt.Errorf("kafka-bootstrap and kafka-topic are required for Kafka load test")
+			break
+		}
+		// Parse bootstrap servers
+		bootstrapServers := strings.Split(kafkaBootstrap, ",")
+		for i := range bootstrapServers {
+			bootstrapServers[i] = strings.TrimSpace(bootstrapServers[i])
+		}
+		o := kafkarunner.RunnerOptions{
+			RunnerOptions: *ro,
+			KafkaOptions: kafkarunner.KafkaOptions{
+				BootstrapServers: bootstrapServers,
+				Topic:            kafkaTopic,
+				Payload:          httpopts.Payload,
+				CollectMetrics:   kafkaMetrics,
+			},
+		}
+		aborter = UpdateRun(&o.RunnerOptions)
+		res, err = kafkarunner.RunKafkaTest(&o)
 	default:
 		o := fhttp.HTTPRunnerOptions{
 			HTTPOptions:        *httpopts,
