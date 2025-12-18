@@ -1,0 +1,25 @@
+# Build the binaries in larger image
+FROM docker.io/fortio/fortio.build:v82@sha256:612990ad14951b0bac39b20a65e1e571af68a1762a836e6aa63c36d8681d7ddf AS build
+WORKDIR /build
+COPY --chown=build:build . fortio
+# Use build mode instead of install to avoid git version requirement
+RUN make -C fortio official-build BUILD_DIR=/build MODE=build OFFICIAL_BIN=/build/result/fortio
+
+# Minimal image with just the binary and certs
+FROM scratch AS release
+# We don't need to copy certs anymore since cli 1.6.0
+# COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /build/result/fortio /usr/bin/fortio
+EXPOSE 8078
+EXPOSE 8079
+EXPOSE 8080
+EXPOSE 8081
+# configmap (dynamic flags)
+VOLUME /etc/fortio
+# data files etc
+VOLUME /var/lib/fortio
+WORKDIR /var/lib/fortio
+ENTRYPOINT ["/usr/bin/fortio"]
+# start the server mode (grpc ping on 8079, http echo and UI on 8080, redirector on 8081) by default
+CMD ["server", "-config-dir", "/etc/fortio"]
+

@@ -1,399 +1,94 @@
-<!-- 1.73.0 -->
-# Fortio
+<!-- Краткий README для русской версии с отсылкой к документации -->
 
-[![Awesome Go](https://fortio.org/mentioned-badge.svg)](https://github.com/avelino/awesome-go#networking)
-[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/6054/badge)](https://bestpractices.coreinfrastructure.org/projects/6054)
-[![Go Report Card](https://goreportcard.com/badge/fortio.org/fortio)](https://goreportcard.com/report/fortio.org/fortio)
-[![GoDoc](https://godoc.org/fortio.org/fortio?status.svg)](https://godoc.org/fortio.org/fortio)
-[![codecov](https://codecov.io/gh/fortio/fortio/branch/master/graph/badge.svg)](https://codecov.io/gh/fortio/fortio)
-[![CircleCI](https://circleci.com/gh/fortio/fortio.svg?style=shield)](https://circleci.com/gh/fortio/fortio)
-[![Docker Pulls](https://img.shields.io/docker/pulls/fortio/fortio.svg)](https://hub.docker.com/r/fortio/fortio)
-<img src="./ui/static/img/fortio-logo-gradient-no-bg.svg" height=109 width=167 align=right />
+## Fortio
 
-Fortio (Φορτίο) started as, and is, [Istio](https://istio.io/)'s load testing tool and later (2018) graduated to be its own project.
+Fortio (Φορτίο) — это многофункциональный инструмент нагрузочного тестирования и библиотека на Go.
+Он умеет генерировать нагрузку по HTTP(S), gRPC, TCP, UDP, а также по Kafka (через клиент
+[franz-go](https://github.com/twmb/franz-go)), и предоставляет:
 
-Fortio runs at a specified query per second (qps) and records a histogram of execution time
-and calculates percentiles (e.g., p99 i.e., the response time such as 99% of the requests take less than that number (in seconds, SI unit)).
-It can run for a set duration, for a fixed number of calls, or until interrupted (at a constant target QPS, or max speed/load per connection/thread).
+- простой **CLI**,
+- **веб‑UI** и **REST API** для запуска и анализа тестов,
+- встроенные echo‑сервера и прокси для отладки.
 
-The name fortio comes from Greek [φορτίο](https://fortio.org/fortio.mp3) which means load/burden.
+Название Fortio происходит от греческого слова [φορτίο](https://fortio.org/fortio.mp3) — «нагрузка».
 
-Fortio is a fast, small (less than 6Mb Docker image download, minimal dependencies), reusable, embeddable go library as well as a command line tool and server process,
-the server includes a simple web UI and REST API to trigger run and see graphical representation of the results (both a single latency graph and a multiple results comparative min, max, avg, qps and percentiles graphs).
+### Основные сценарии
 
-Fortio also includes a set of server side features (similar to httpbin) to help debugging and testing: request echo back including headers, adding latency or error codes with a probability distribution, TCP echoing, TCP proxying, HTTP fan out/scatter and gather proxy server, gRPC echo/health in addition to HTTP, etc...
+- Нагрузочное тестирование HTTP/HTTPS‑сервисов.
+- Нагрузочное тестирование gRPC‑сервисов (ping/health и произвольные методы).
+- Нагрузка на TCP/UDP echo‑сервисы.
+- Нагрузка на Kafka‑топики (producer‑нагрузка) с использованием `franz-go`.
+- Просмотр и сравнение результатов через веб‑UI и JSON‑отчёты.
 
-Fortio is quite mature and very stable with no known major bugs (lots of possible improvements if you want to contribute though!),
-and when bugs are found they are fixed quickly, so after 1 year of development and 42 incremental releases, we reached 1.0 in June 2018.
+### Установка
 
-Fortio components can be used a library even for unrelated projects, for instance the `stats`, or `fhttp` utilities both client and server.
-A recent addition is the new `jrpc` JSON Remote Procedure Calls library package ([docs](https://pkg.go.dev/fortio.org/fortio/jrpc)).
+- **Docker** (рекомендуется для быстрого старта):
 
-We also have moved some of the library to their own toplevel package, like:
-- Dynamic flags: [fortio.org/dflag](https://github.com/fortio/dflag#fortio-dynamic-flags)
-- Logger: [fortio.org/log](https://github.com/fortio/log#log) - now using structured JSON logs for servers (vs text for CLIs) since fortio 1.55 / log 1.4. In color since fortio 1.57 / log 1.6.
-- Version helper: [fortio.org/version](https://github.com/fortio/version#version)
-- CLI helpers integrating the above to reduce toil making new tools [fortio.org/cli](https://github.com/fortio/cli#cli) and servers [fortio.org/scli](https://github.com/fortio/scli#scli) for arguments, flags, usage, dynamic config, etc...
+  ```bash
+  docker run -p 8080:8080 -p 8079:8079 fortio/fortio server &
+  docker run fortio/fortio load http://www.google.com/
+  ```
 
-If you want to connect to fortio using HTTPS and fortio to provide real TLS certificates, or to multiplex gRPC and regular HTTP behind a single port, check out [Fortio Proxy](https://github.com/fortio/proxy#fortio-proxy).
+- **Из исходников (Go 1.18+):**
 
-If you want fortio to generate detailed Open Telemetry traces use [Fortiotel](https://github.com/fortio/fortiotel#fortiotel).
+  ```bash
+  go install fortio.org/fortio@latest
+  # затем:
+  fortio server
+  ```
 
-Fortio now embeds the [grol scripting language](https://grol.io/), available using `fortio script`.
-## Installation
+- **Готовые бинарники / пакеты**: смотрите раздел *Releases* в GitHub‑репозитории.
 
-We publish a multi architecture Docker image (linux/amd64, linux/arm64, linux/ppc64le, linux/s390x) `fortio/fortio`.
+После запуска `fortio server` веб‑интерфейс доступен по адресу
+`http://localhost:8080/fortio/` (порт и путь можно изменить флагами).
 
-For instance:
-```shell
-docker run -p 8080:8080 -p 8079:8079 fortio/fortio server & # For the server
-docker run fortio/fortio load -logger-force-color http://www.google.com/ # For a test run, forcing color instead of JSON log output
+### Краткий пример
+
+```bash
+# HTTP‑нагрузка
+fortio load -qps 100 -c 10 -t 30s http://localhost:8080/echo
+
+# gRPC‑нагрузка
+fortio load -grpc -ping -qps 20 -c 4 -t 10s localhost:8079
+
+# Kafka‑нагрузка
+fortio load \
+  -kafka-bootstrap "localhost:9092" \
+  -kafka-topic "test-topic" \
+  -qps 100 -t 30s
 ```
 
-You can install from source:
+## Документация по режимам нагрузки
 
-1. [Install go](https://golang.org/doc/install) (golang 1.18 or later)
-2. `go install fortio.org/fortio@latest`
-3. you can now run `fortio` (from your gopath bin/ directory, usually `~/go/bin`)
+Подробные примеры и флаги для каждого типа нагрузки вынесены в отдельные файлы в каталоге `docs/`:
 
-The [releases](https://github.com/fortio/fortio/releases) page has binaries for many OS/architecture combinations (see assets):
+- **HTTP‑нагрузка**: `docs/http-load.md`
+- **gRPC‑нагрузка**: `docs/grpc-load.md`
+- **TCP‑нагрузка**: `docs/tcp-load.md`
+- **UDP‑нагрузка**: `docs/udp-load.md`
+- **Kafka‑нагрузка**: `docs/kafka-load.md`
 
-```shell
-curl -L https://github.com/fortio/fortio/releases/download/v1.73.0/fortio-linux_amd64-1.73.0.tgz \
- | sudo tar -C / -xvzpf -
-# or the debian package
-wget https://github.com/fortio/fortio/releases/download/v1.73.0/fortio_1.73.0_amd64.deb
-dpkg -i fortio_1.73.0_amd64.deb
-# or the rpm
-rpm -i https://github.com/fortio/fortio/releases/download/v1.73.0/fortio-1.73.0-1.x86_64.rpm
-# and more, see assets in release page
-```
+Рекомендуется начать с HTTP‑раздела, затем по необходимости смотреть gRPC/TCP/UDP/Kafka.
 
-On macOS you can also install Fortio using [Homebrew](https://brew.sh/):
+## Веб‑UI и REST API
 
-```shell
-brew install fortio
-```
+После запуска `fortio server` доступны:
 
-On Windows, download https://github.com/fortio/fortio/releases/download/v1.73.0/fortio_win_1.73.0.zip and extract `fortio.exe` to any location, then using the Windows Command Prompt:
-```
-fortio.exe server
-```
-(at the prompt, allow the Windows firewall to let connections in)
+- веб‑UI: `http://<host>:8080/fortio/` — запуск тестов и просмотр графиков;
+- REST API: `http://<host>:8080/fortio/rest/run` и связанные эндпоинты
+  (`/rest/status`, `/rest/stop`, `/rest/dns`).
 
-Once `fortio server` is running, you can visit its web UI at [http://localhost:8080/fortio/](http://localhost:8080/fortio/)
+Примеры REST‑запросов есть в соответствующих файлах документации (HTTP/gRPC/TCP/UDP/Kafka).
 
-You can get a preview of the reporting/graphing UI at [https://demo.fortio.org](https://demo.fortio.org)
-<!--
-and on [istio.io/docs/performance-and-scalability/synthetic-benchmarks/](https://istio.io/docs/performance-and-scalability/synthetic-benchmarks/)
--->
+## Дополнительно
 
-## Command line arguments
+- **Проекты вокруг Fortio:**
+  - Fortio Proxy — TLS‑прокси и мультиплексирование gRPC/HTTP.
+  - Fortiotel — интеграция с OpenTelemetry.
+- **Встроенный язык сценариев**: `fortio script` (на базе [grol](https://grol.io/)).
 
-Fortio can be a HTTP or gRPC load generator, gathering statistics using the `load` subcommand,
-or start simple HTTP and gRPC ping servers, as well as a basic web UI, result graphing, TCP/UDP echo, proxies, https redirector,
-with the `server` command or issue gRPC ping messages using the `grpcping` command.
-It can also fetch a single URL's for debugging when using the `curl` command (or the `-curl` flag to the load command).
-Likewise you can establish a single TCP (or Unix domain or UDP (use `udp://` prefix)) connection using the `nc` command (like the standalone netcat package).
-You can run just the redirector with `redirect` or just the TCP echo with `tcp-echo`.
-If you saved JSON results (using the web UI or directly from the command line), you can browse and graph those results using the `report` command.
-
-You can run interactive fortio.load() scripts using `script` or already written [grol scripts](https://grol.io/), a simplified go like language, from a file, like
-```
-fortio script -init 'url="http://localhost:8080/"' scripting_example.gr
-...
----- 🎉 Ramp up to 8000 qps done without error, actual qps 7993.678998 ----
----- 🎉 Ramp up to 9000 qps done without error, actual qps 8994.693886 ----
----- 🎉 Ramp up to 10000 qps done without error, actual qps 9996.013250 ----
-```
-See [scripting_example.gr](scripting_example.gr) or the tests in [cli_tests.txtar](cli_test.txtar).
-
-The `version` command will print the short print version. `fortio buildinfo` will print the full
-build information.
-
-Lastly, you can learn which flags are available using `help` command.
-
-Most important flags for HTTP load generation:
-
-| Flag         | Description, example |
-| -------------|----------------------|
-| `-qps rate` | Total Queries Per Seconds across all connections/threads or 0 for no wait/max qps |
-| `-nocatchup` | Do not try to reach the target qps by going faster when the service falls behind and then recovers. Makes QPS an absolute ceiling even if the service has some spikes in latency, fortio will not compensate (but also won't stress the target more than the set qps). Recommended to use jointly with `-uniform`. |
-| `-c connections` | Number of parallel simultaneous connections (and matching go routine) |
-| `-t duration` | How long to run the test (for instance `-t 30m` for 30 minutes or `-t 1d4h` for 28h) or 0 to run until ^C, example (default 5s) |
-| `-n numcalls` | Run for exactly this number of calls instead of duration. Default (0) is to use duration (-t). |
-| `-payload str` or `-payload-file fname` | Switch to using POST with the given payload (see also `-payload-size` for random payload)|
-| `-uniform` | Spread the calls in time across threads for a more uniform call distribution. Works even better in conjunction with `-nocatchup`. |
-| `-r resolution` | Resolution of the histogram lowest buckets in seconds (default 0.001 i.e, 1ms), use 1/10th of your expected typical latency (and -offset if needed)|
-| `-H "header: value"` | Can be specified multiple times to add headers (including Host:) |
-| `-a`     |  Automatically save JSON result with filename based on labels and timestamp |
-| `-json filename` | Filename or `-` for stdout to output JSON result (relative to `-data-dir` by default, should end with .json if you want `fortio report` to show them; using `-a` is typically a better option)|
-| `-labels "l1 l2 ..."` |  Additional config data/labels to add to the resulting JSON, defaults to target URL and hostname|
-| `-h2` |  Client calls will attempt to negotiate HTTP/2 instead of HTTP/1.1, implies `-stdclient`|
-| `-X method` | Change HTTP method to the one specified instead of automatic HTTP GET or POST based on `-payload-*` or `-content-type`|
-| `-logger-force-color` | For interactive runs for color instead of JSON output|
-| `-logger-no-color` | Force JSON output even when run from terminal|
-
-Changing the HTTP options like the TLS options `-cert`, `-key`, `-cacert` when launching an echo/UI/rapi server will make these options the default for runs initiated from that server (or fetches/proxies etc.).
-
-Full list of command line flags (`fortio help`):
-<details>
-<!-- use release/updateFlags.sh to update this section -->
-<pre>
-<!-- USAGE_START -->
-Φορτίο 1.73.0 usage:
-        fortio command [flags] target
-where command is one of: load (load testing), server (starts ui, rest api,
- http-echo, redirect, proxies, tcp-echo, udp-echo and grpc ping servers),
- tcp-echo (only the tcp-echo server), udp-echo (only udp-echo server),
- report (report only UI server), redirect (only the redirect server),
- proxies (only the -M and -P configured proxies), grpcping (gRPC client),
- or curl (single URL debug), or nc (single tcp or udp:// connection),
- or script (interactive grol script mode or script file),
- or version (prints the full version and build details).
-where target is a URL (http load tests) or host:port (grpc health test),
- or tcp://host:port (tcp load test), or udp://host:port (udp load test).
-or 1 of the special arguments
-        fortio {help|envhelp|version|buildinfo}
-flags:
-  -H key:value
-        Additional HTTP header(s) or gRPC metadata. Multiple key:value pairs can be
-passed using multiple -H.
-  -L    Follow redirects (implies -std-client) - do not use for load test
-  -M value
-        HTTP multi proxy to run, e.g -M "localport1 baseDestURL1 baseDestURL2" -M ...
-  -P value
-        TCP proxies to run, e.g -P "localport1 dest_host1:dest_port1" -P "[::1]:0
-www.google.com:443" ...
-  -X string
-        HTTP method to use instead of GET/POST depending on payload/content-type
-  -a    Automatically save JSON result with filename based on labels & timestamp
-  -abort-on int
-        HTTP status code that if encountered aborts the run. e.g., 503 or -1 for socket
-errors.
-  -access-log-file path
-        file path to log all requests to. Maybe have performance impacts
-  -access-log-format format
-        format for access log. Supported values: [json, influx] (default "json")
-  -allow-initial-errors
-        Allow and don't abort on initial warmup errors
-  -base-url URL
-        base URL used as prefix for data/index.tsv generation. (when empty, the URL from
-the first request is used)
-  -c int
-        Number of connections/goroutine/threads (default 4)
-  -cacert Path
-        Path to a custom CA certificate file to be used for the TLS client connections,
-if empty, use https:// prefix for standard internet/system CAs
-  -calc-qps
-        Calculate the qps based on number of requests (-n) and duration (-t)
-  -cert Path
-        Path to the certificate file to be used for client or server TLS
-  -compression
-        Enable HTTP compression
-  -config-dir directory
-        Config directory to watch for dynamic flag changes
-  -config-port port
-        Config port to open for dynamic flag UI/api
-  -connection-reuse min:max
-        Range min:max for the max number of connections to reuse for each thread, default
-to unlimited. e.g. 10:30 means randomly choose a max connection reuse threshold between
-10 and 30 requests.
-  -content-type string
-        Sets HTTP content type. Setting this value switches the request method from GET
-to POST.
-  -curl
-        Just fetch the content once
-  -curl-stdout-headers
-        Restore pre 1.22 behavior where HTTP headers of the fast client are output to
-stdout in curl mode. now stderr by default.
-  -data-dir Directory
-        Directory where JSON results are stored/read (default ".")
-  -dns-method method
-        When a name resolves to multiple ip, which method to pick: cached-rr for cached
-round-robin, rnd for random, first for first answer (pre 1.30 behavior), rr for
-round-robin. (default cached-rr)
-  -echo-debug-path URI
-        http echo server URI for debug, empty turns off that part (more secure) (default
-"/debug")
-  -echo-server-default-params value
-        Default parameters/querystring to use if there isn't one provided explicitly. E.g
-"status=404&delay=3s"
-  -gomaxprocs int
-        Setting for runtime.GOMAXPROCS, &lt; 1 doesn't change the default
-  -grpc
-        Use gRPC (health check by default, add -ping for ping) for load testing
-  -grpc-compression
-        Enable gRPC compression
-  -grpc-max-streams uint
-        MaxConcurrentStreams for the gRPC server. Default (0) is to leave the option
-unset.
-  -grpc-method string
-        Fully-qualified gRPC method to call (Service/Method). Service must have
-reflection enabled.
-  -grpc-ping-delay duration
-        gRPC ping delay in response
-  -grpc-port port
-        grpc server port. Can be in the form of host:port, ip:port or port or
-/unix/domain/path or "disabled" to not start the gRPC server. (default "8079")
-  -h2
-        Attempt to use HTTP/2.0 / h2 (instead of HTTP/1.1) for both TLS and h2c
-  -halfclose
-        When not keepalive, whether to half close the connection (only for fast http)
-  -health
-        gRPC ping client mode: use health instead of ping
-  -healthservice string
-        which service string to pass to health check
-  -http-port port
-        http-echo server port. Can be in the form of host:port, ip:port, port or
-/unix/domain/path or "disabled". (default "8080")
-  -http1.0
-        Use HTTP/1.0 (instead of HTTP/1.1)
-  -httpbufferkb kbytes
-        Size of the buffer (max data size) for the optimized HTTP client in kbytes
-(default 128)
-  -httpccch
-        Check for Connection: Close Header
-  -https-insecure
-        Long form of the -k flag
-  -init code
-        grol code to run before the script (for instance to set some arguments)
-  -jitter
-        set to true to de-synchronize parallel clients' by 10%
-  -json path
-        JSON output to provided file path or '-' for stdout (empty = no json output,
-unless -a is used)
-  -k    Do not verify certs in HTTPS/TLS/gRPC connections
-  -keepalive
-        Keep connection alive (only for fast HTTP/1.1) (default true)
-  -key Path
-        Path to the key file matching the -cert
-  -labels string
-        Additional config data/labels to add to the resulting JSON, defaults to target
-URL and hostname
-  -log-errors
-        Log HTTP non-2xx/418 status codes as they occur (default true)
-  -logger-file-line
-        Filename and line numbers emitted in JSON logs, use -logger-file-line=false to
-disable (default true)
-  -logger-force-color
-        Force color output even if stderr isn't a terminal
-  -logger-goroutine
-        GoroutineID emitted in JSON/color logs, use -logger-goroutine=false to disable
-(default true)
-  -logger-json
-        Log in JSON format, use -logger-json=false to disable (default true)
-  -logger-no-color
-        Prevent colorized output even if stderr is a terminal
-  -logger-timestamp
-        Timestamps emitted in JSON logs, use -logger-timestamp=false to disable (default
-true)
-  -loglevel level
-        log level, one of [Debug Verbose Info Warning Error Critical Fatal] (default Info)
-  -max-echo-delay value
-        Maximum sleep time for delay= echo server parameter. dynamic flag. (default 1.5s)
-  -maxpayloadsizekb Kbytes
-        MaxPayloadSize is the maximum size of payload to be generated by the EchoHandler
-size= argument. In Kbytes. (default 256)
-  -mtls
-        Require client certificate signed by -cacert for client connections
-  -multi-mirror-origin
-        Mirror the request URL to the target for multi proxies (-M) (default true)
-  -multi-serial-mode
-        Multi server (-M) requests one at a time instead of parallel mode
-  -n int
-        Run for exactly this number of calls instead of duration. Default (0) is to use
-duration (-t). Default is 1 when used as gRPC ping count.
-  -nc-dont-stop-on-eof
-        in netcat (nc) mode, don't abort as soon as remote side closes
-  -no-reresolve
-        Keep the initial DNS resolution and don't re-resolve when making new connections
-(because of error or reuse limit reached)
-  -nocatchup
-        set to exact fixed qps and prevent fortio from trying to catchup when the target
-fails to keep up temporarily
-  -offset duration
-        Offset of the histogram data
-  -p string
-        List of pXX to calculate (default "50,75,90,99,99.9")
-  -payload string
-        Payload string to send along
-  -payload-file path
-        File path to be use as payload (POST for HTTP), replaces -payload when set.
-  -payload-size int
-        Additional random payload size, replaces -payload when set > 0, must be smaller
-than -maxpayloadsizekb. Setting this switches HTTP to POST.
-  -ping
-        gRPC load test: use ping instead of health
-  -pprof
-        Enable pprof HTTP endpoint in the Web UI handler server
-  -profile file
-        write .cpu and .mem profiles to file
-  -proxy-all-headers
-        Determines if only tracing or all headers (and cookies) are copied from request
-on the fetch2 ui/server endpoint (default true)
-  -qps float
-        Queries Per Seconds or 0 for no wait/max qps (default 8)
-  -quiet
-        Quiet mode, sets loglevel to Error (quietly) to reduces the output
-  -r float
-        Resolution of the histogram lowest buckets in seconds (default 0.001)
-  -redirect-port port
-        Redirect all incoming traffic to https:// URL (need ingress to work properly).
-Can be in the form of host:port, ip:port, port or "disabled" to disable the feature.
-(default "8081")
-  -resolve IP
-        Resolve host name to this IP
-  -resolve-ip-type type
-        Resolve type: ip4 for ipv4, ip6 for ipv6 only, use ip for both (default ip4)
-  -runid int
-        Optional RunID to add to JSON result and auto save filename, to match server mode
-  -s int
-        Number of streams per gRPC connection (default 1)
-  -sequential-warmup
-        http(s) runner warmup done sequentially instead of parallel. When set, restores
-pre 1.21 behavior
-  -server-idle-timeout value
-        Default IdleTimeout for servers (default 30s)
-  -static-dir path
-        Deprecated/unused path.
-  -stdclient
-        Use the slower net/http standard client (slower but supports h2/h2c)
-  -stream
-        Stream payload from stdin (only for fortio curl mode)
-  -sync URL
-        index.tsv or s3/gcs bucket XML URL to fetch at startup for server modes.
-  -sync-interval duration
-        Refresh the URL every given interval (default, no refresh)
-  -t duration
-        How long (duration) to run the test or 0 to run until ^C (default 5s)
-  -tcp-port port
-        tcp-echo server port. Can be in the form of host:port, ip:port, port or
-/unix/domain/path or "disabled". (default "8078")
-  -timeout duration
-        Connection and read timeout value (for HTTP) (default 3s)
-  -udp-async
-        if true, udp echo server will use separate go routine to reply
-  -udp-port port
-        udp-echo server port. Can be in the form of host:port, ip:port, port or
-"disabled". (default "8078")
-  -udp-timeout duration
-        Udp timeout (default 750ms)
-  -ui-path URI
-        HTTP server URI for UI, empty turns off that part (more secure) (default
-"/fortio/")
-  -uniform
-        set to true to de-synchronize parallel clients' requests uniformly
-  -unix-socket path
-        Unix domain socket path to use for physical connection
-  -user user:password
-        User credentials for basic authentication (for HTTP). Input data format should be
-user:password
-<!-- USAGE_END -->
-</pre>
-</details>
-
-See also the FAQ entry about [fortio flags for best results](https://github.com/fortio/fortio/wiki/FAQ#i-want-to-get-the-best-results-what-flags-should-i-pass).
+Расширенную англоязычную документацию, FAQ и исторические примеры можно найти в wiki
+и старых версиях `README.md` в репозитории GitHub.
 
 ## Server URLs and features
 

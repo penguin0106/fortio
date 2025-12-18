@@ -249,9 +249,29 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 			runWriter = nil // we don't want run to write json
 		}
+
+		// Calculate expected duration for progress monitoring
+		expectedDuration := dur.Seconds()
+		if n > 0 && qps > 0 {
+			expectedDuration = float64(n) / qps
+		}
+
+		// Get consumer services from form (can be multiple)
+		consumerServices := parseConsumerServicesFromForm(r)
+
+		// Start progress monitoring
+		stopMonitor := startRunMonitor(runid, ro.QPS, expectedDuration, runner, r.FormValue("kafka-topic"), consumerServices)
+
 		// A bit awkward API because of trying to reuse yet be compatible from old UI code with
 		// new `rapi` code.
 		res, savedAs, json, err := rapi.Run(runWriter, r, nil, runner, url, &ro, httpopts, true /*HTML mode*/)
+
+		// Stop monitoring and send final status
+		if err != nil {
+			stopMonitor("error")
+		} else {
+			stopMonitor("completed")
+		}
 		if err != nil {
 			_, _ = fmt.Fprintf(w,
 				"❌ Aborting because of %s\n</pre><script>document.getElementById('running').style.display = 'none';</script></body></html>\n",
@@ -267,12 +287,220 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			_, _ = fmt.Fprintf(w, "Saved result to <a href='%s'>%s</a>"+
 				" (<a href='browse?url=%s.json' target='_new'>graph link</a>)\n", savedAs, savedAs, id)
 		}
-		_, _ = fmt.Fprintf(w, "All done %d calls %.3f ms avg, %.1f qps\n</pre>\n<script>\n",
+		_, _ = fmt.Fprintf(w, "All done %d calls %.3f ms avg, %.1f qps\n</pre>\n",
 			res.Result().DurationHistogram.Count,
 			1000.*res.Result().DurationHistogram.Avg,
 			res.Result().ActualQPS)
+
+		// Output summary cards
+		_, _ = w.Write([]byte(`
+<div id="resultsSummary" class="form-section" style="margin-top: 24px;">
+  <h3 class="section-title">📊 Результаты теста</h3>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+    <div class="result-card">
+      <div class="result-value" id="resTotal">` + fmt.Sprintf("%d", res.Result().DurationHistogram.Count) + `</div>
+      <div class="result-label">Всего запросов</div>
+    </div>
+    <div class="result-card">
+      <div class="result-value" id="resQPS">` + fmt.Sprintf("%.1f", res.Result().ActualQPS) + `</div>
+      <div class="result-label">QPS</div>
+    </div>
+    <div class="result-card">
+      <div class="result-value" id="resAvg">` + fmt.Sprintf("%.2f ms", 1000.*res.Result().DurationHistogram.Avg) + `</div>
+      <div class="result-label">Avg Latency</div>
+    </div>
+    <div class="result-card">
+      <div class="result-value" id="resMin">` + fmt.Sprintf("%.2f ms", 1000.*res.Result().DurationHistogram.Min) + `</div>
+      <div class="result-label">Min Latency</div>
+    </div>
+    <div class="result-card">
+      <div class="result-value" id="resMax">` + fmt.Sprintf("%.2f ms", 1000.*res.Result().DurationHistogram.Max) + `</div>
+      <div class="result-label">Max Latency</div>
+    </div>
+    <div class="result-card">
+      <div class="result-value" id="resDuration">` + fmt.Sprintf("%.1f s", res.Result().ActualDuration.Seconds()) + `</div>
+      <div class="result-label">Длительность</div>
+    </div>
+  </div>
+</div>
+<style>
+.result-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.05));
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+  border: 1px solid var(--border, #e2e8f0);
+}
+.result-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--primary, #10b981);
+}
+.result-label {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #64748b);
+  margin-top: 6px;
+}
+</style>
+<script>
+`))
 		ResultToJsData(w, json)
-		_, _ = w.Write([]byte("</script><p>Go to <a href='./'>Top</a>.</p></body></html>\n"))
+		_, _ = w.Write([]byte(`
+// Parse Kafka metrics from pre content and display nicely
+(function() {
+  var preContent = document.querySelector('pre');
+  if (!preContent) {
+    console.log('No pre element found');
+    return;
+  }
+  
+  var text = preContent.textContent;
+  console.log('Pre content length:', text.length);
+  
+  function formatBytes(bytes) {
+    if (isNaN(bytes)) return bytes;
+    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
+    if (bytes >= 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return bytes + ' B';
+  }
+  
+  var resultsSummary = document.getElementById('resultsSummary');
+  var lastSection = resultsSummary;
+  
+  // Check if this is a Kafka test
+  if (text.indexOf('Kafka Metrics:') !== -1) {
+    console.log('Found Kafka Metrics in output');
+    
+    // Parse metrics
+    var metrics = {};
+    var lines = text.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (line.indexOf('Produce Requests Total:') === 0) metrics.total = line.split(':')[1].trim();
+      if (line.indexOf('Produce Requests Success:') === 0) metrics.success = line.split(':')[1].trim();
+      if (line.indexOf('Produce Requests Error:') === 0) metrics.errors = line.split(':')[1].trim();
+      if (line.indexOf('Produce Bytes Total:') === 0) metrics.bytes = line.split(':')[1].trim();
+      if (line.indexOf('Produce Latency Avg:') === 0) metrics.avgLatency = line.split(':')[1].trim();
+      if (line.indexOf('Produce Latency Max:') === 0) metrics.maxLatency = line.split(':')[1].trim();
+      if (line.indexOf('Total Messages sent:') === 0) metrics.messages = line.split(':')[1].trim();
+    }
+    
+    console.log('Parsed Kafka metrics:', metrics);
+    
+    var metricsHtml = '';
+    if (metrics.messages) metricsHtml += '<div class="result-card"><div class="result-value">' + metrics.messages + '</div><div class="result-label">Сообщений отправлено</div></div>';
+    if (metrics.total) metricsHtml += '<div class="result-card"><div class="result-value">' + metrics.total + '</div><div class="result-label">Produce запросов</div></div>';
+    if (metrics.success) metricsHtml += '<div class="result-card"><div class="result-value">' + metrics.success + '</div><div class="result-label">Успешных</div></div>';
+    if (metrics.errors) metricsHtml += '<div class="result-card"><div class="result-value" style="color: ' + (parseInt(metrics.errors) > 0 ? '#ef4444' : '#10b981') + '">' + metrics.errors + '</div><div class="result-label">Ошибок</div></div>';
+    if (metrics.bytes) metricsHtml += '<div class="result-card"><div class="result-value">' + formatBytes(parseInt(metrics.bytes)) + '</div><div class="result-label">Отправлено данных</div></div>';
+    if (metrics.avgLatency) metricsHtml += '<div class="result-card"><div class="result-value">' + metrics.avgLatency + '</div><div class="result-label">Avg Latency</div></div>';
+    if (metrics.maxLatency) metricsHtml += '<div class="result-card"><div class="result-value">' + metrics.maxLatency + '</div><div class="result-label">Max Latency</div></div>';
+    
+    if (metricsHtml && resultsSummary) {
+      var kafkaDiv = document.createElement('div');
+      kafkaDiv.className = 'form-section';
+      kafkaDiv.id = 'kafkaMetricsSection';
+      kafkaDiv.style.marginTop = '24px';
+      kafkaDiv.innerHTML = '<h3 class="section-title">📨 Kafka Producer Metrics</h3>' +
+        '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">' + metricsHtml + '</div>';
+      resultsSummary.after(kafkaDiv);
+      lastSection = kafkaDiv;
+      console.log('Kafka metrics section added');
+    }
+  }
+  
+  // Check for Consumer metrics
+  if (text.indexOf('Consumer Service Metrics:') !== -1) {
+    console.log('Found Consumer Service Metrics in output');
+    
+    var metricsUrl = '';
+    var metricsData = [];
+    var inMetrics = false;
+    var lines = text.split('\n');
+    
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (line.indexOf('Metrics URL:') === 0) {
+        metricsUrl = line.substring('Metrics URL:'.length).trim();
+      }
+      if (line.indexOf('Metrics Preview') === 0) {
+        inMetrics = true;
+        continue;
+      }
+      if (inMetrics && line && line.indexOf('Collection Error') === -1 && line.indexOf('Saved result') === -1) {
+        metricsData.push(line);
+      }
+    }
+    
+    console.log('Consumer metrics URL:', metricsUrl);
+    console.log('Consumer metrics data:', metricsData);
+    
+    if (metricsUrl) {
+      var consumerDiv = document.createElement('div');
+      consumerDiv.className = 'form-section';
+      consumerDiv.id = 'consumerMetricsSection';
+      consumerDiv.style.marginTop = '24px';
+      
+      // Parse consumer metrics into cards
+      var consumerCards = '';
+      for (var j = 0; j < metricsData.length; j++) {
+        var metricLine = metricsData[j].trim();
+        var parts = metricLine.split(/\s+/);
+        if (parts.length >= 2) {
+          var metricName = parts[0].replace(/_/g, ' ');
+          var metricValue = parts[1];
+          consumerCards += '<div class="result-card"><div class="result-value">' + metricValue + '</div><div class="result-label">' + metricName + '</div></div>';
+        }
+      }
+      
+      consumerDiv.innerHTML = '<h3 class="section-title">📥 Consumer Metrics</h3>' +
+        '<p style="margin-bottom: 16px; color: var(--text-secondary, #64748b);"><strong>URL:</strong> ' + metricsUrl + '</p>' +
+        (consumerCards ? '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">' + consumerCards + '</div>' : 
+        '<pre style="background: var(--bg-secondary, #f1f5f9); padding: 16px; border-radius: 8px; font-size: 0.85rem; overflow-x: auto;">' + metricsData.join('\n') + '</pre>');
+      
+      lastSection.after(consumerDiv);
+      console.log('Consumer metrics section added');
+    }
+  }
+})();
+</script>
+<div style="text-align: center; margin: 32px 0;">
+  <a href="./" style="
+    display: inline-block;
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    color: white;
+    padding: 16px 32px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 1.1rem;
+    text-decoration: none;
+    box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4);
+    transition: all 0.2s;
+  " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+    ← Назад к тестированию
+  </a>
+  <a href="browse" style="
+    display: inline-block;
+    background: var(--bg-card, #fff);
+    color: var(--text-primary, #0f172a);
+    padding: 16px 32px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 1.1rem;
+    text-decoration: none;
+    border: 2px solid var(--border, #e2e8f0);
+    margin-left: 12px;
+    transition: all 0.2s;
+  " onmouseover="this.style.borderColor='#10b981'" onmouseout="this.style.borderColor='var(--border, #e2e8f0)'">
+    📊 Все результаты
+  </a>
+</div>
+<div class="page-footer" style="text-align: center; padding: 24px; color: var(--text-muted, #94a3b8); margin-top: 32px;">
+  <p>Fortio - <a href="https://fortio.org/" target="_blank">Документация</a> · <a href="https://github.com/fortio/fortio" target="_blank">GitHub</a></p>
+</div>
+</body></html>
+`))
 	}
 }
 
@@ -717,6 +945,11 @@ func Serve(cfg *ServerConfig) bool {
 	} else {
 		mux.HandleFunc(uiPath+"sync", log.LogAndCall("Sync", SyncHandler))
 	}
+
+	// Real-time progress endpoints
+	mux.HandleFunc(uiPath+"progress/sse", ProgressSSEHandler)
+	mux.HandleFunc(uiPath+"progress/api", ProgressAPIHandler)
+
 	dflagsPath := uiPath + "flags"
 	dflagSetURL := dflagsPath + "/set"
 	dflagEndPt := endpoint.NewFlagsEndpoint(flag.CommandLine, dflagSetURL)
@@ -788,4 +1021,317 @@ func parseConnectionReuseRange(minV string, maxV string, value string) string {
 	}
 
 	return ""
+}
+
+// parseConsumerServicesFromForm parses consumer services from form data
+// Format: kafka-consumer-service-name[] and kafka-consumer-service-url[] arrays
+func parseConsumerServicesFromForm(r *http.Request) []ConsumerServiceConfig {
+	names := r.Form["kafka-consumer-service-name[]"]
+	urls := r.Form["kafka-consumer-service-url[]"]
+
+	var services []ConsumerServiceConfig
+	for i := 0; i < len(names) && i < len(urls); i++ {
+		name := strings.TrimSpace(names[i])
+		url := strings.TrimSpace(urls[i])
+		if name != "" && url != "" {
+			services = append(services, ConsumerServiceConfig{Name: name, URL: url})
+		}
+	}
+	return services
+}
+
+// startRunMonitor starts a goroutine that monitors the run progress and sends updates via SSE
+// Returns a function to call when the run completes
+func startRunMonitor(runID int64, targetQPS float64, expectedSeconds float64, runType, kafkaTopic string, consumerServices []ConsumerServiceConfig) func(status string) {
+	startTime := time.Now()
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+
+	log.Infof("Starting progress monitor for run %d, expected %.1fs, type: %s, consumerServices: %d", runID, expectedSeconds, runType, len(consumerServices))
+
+	// Time series data storage (keep last 200 points)
+	const maxPoints = 200
+
+	// Kafka metrics time series
+	kafkaMetrics := make(map[string]*MetricTimeSeries)
+	kafkaMetricColors := map[string]string{
+		"qps":            "#10b981",
+		"latency_avg":    "#3b82f6",
+		"latency_max":    "#ef4444",
+		"messages_total": "#8b5cf6",
+		"bytes_total":    "#f59e0b",
+		"success":        "#22c55e",
+		"errors":         "#dc2626",
+	}
+
+	// Consumer metrics per service (serviceName -> metricName -> timeSeries)
+	consumerServiceMetrics := make(map[string]map[string]*MetricTimeSeries)
+	consumerMetricColors := []string{"#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899"}
+	// Track color index per service
+	serviceColorIndex := make(map[string]int)
+
+	// Build ConsumerServices info for progress
+	consumerServicesInfo := make([]ConsumerServiceInfo, len(consumerServices))
+	for i, svc := range consumerServices {
+		consumerServicesInfo[i] = ConsumerServiceInfo{Name: svc.Name, URL: svc.URL, Metrics: []MetricTimeSeries{}}
+		consumerServiceMetrics[svc.Name] = make(map[string]*MetricTimeSeries)
+		serviceColorIndex[svc.Name] = 0
+	}
+
+	// Initialize progress immediately
+	progress := &LiveProgress{
+		RunID:            runID,
+		Status:           "running",
+		StartTime:        startTime,
+		ExpectedSeconds:  expectedSeconds,
+		TargetQPS:        targetQPS,
+		KafkaTopic:       kafkaTopic,
+		ConsumerServices: consumerServicesInfo,
+	}
+	UpdateProgress(runID, progress)
+
+	go func() {
+		defer close(doneCh)
+		ticker := time.NewTicker(300 * time.Millisecond)
+		defer ticker.Stop()
+
+		consumerTicker := time.NewTicker(1 * time.Second) // Fetch consumer metrics every second
+		defer consumerTicker.Stop()
+
+		retryCount := 0
+		var lastTotal int64
+
+		for {
+			select {
+			case <-stopCh:
+				return
+
+			case <-consumerTicker.C:
+				// Fetch consumer metrics from all configured services
+				elapsed := time.Since(startTime).Seconds()
+				for _, svc := range consumerServices {
+					metrics, err := FetchConsumerMetrics(svc.URL)
+					if err == nil {
+						svcMetrics := consumerServiceMetrics[svc.Name]
+						colorIdx := serviceColorIndex[svc.Name]
+						for _, m := range metrics {
+							ts, exists := svcMetrics[m.Name]
+							if !exists {
+								ts = &MetricTimeSeries{
+									Name:        m.Name,
+									Label:       m.Name,
+									Color:       consumerMetricColors[colorIdx%len(consumerMetricColors)],
+									ServiceName: svc.Name,
+									Points:      make([]TimeSeriesPoint, 0, maxPoints),
+								}
+								svcMetrics[m.Name] = ts
+								colorIdx++
+								serviceColorIndex[svc.Name] = colorIdx
+							}
+							ts.Points = appendPoint(ts.Points, TimeSeriesPoint{Time: elapsed, Value: m.Value}, maxPoints)
+						}
+					}
+				}
+
+			case <-ticker.C:
+				elapsed := time.Since(startTime).Seconds()
+				var progressPercent float64
+				if expectedSeconds > 0 {
+					progressPercent = (elapsed / expectedSeconds) * 100
+					if progressPercent > 100 {
+						progressPercent = 99
+					}
+				}
+
+				// Try to get stats from the running test
+				var total, success, errors int64
+				var avgMs, minMs, maxMs float64
+				var currentQPS float64
+
+				liveStats := periodic.GetLiveStatsByRunID(runID)
+				if liveStats != nil {
+					total, success, errors, avgMs, minMs, maxMs = liveStats.GetSnapshot()
+					if elapsed > 0.1 {
+						currentQPS = float64(total) / elapsed
+					}
+					retryCount = 0
+
+					// Add to Kafka metrics time series
+					// QPS
+					if kafkaMetrics["qps"] == nil {
+						kafkaMetrics["qps"] = &MetricTimeSeries{Name: "qps", Label: "QPS", Unit: "req/s", Color: kafkaMetricColors["qps"], Points: make([]TimeSeriesPoint, 0, maxPoints)}
+					}
+					instantQPS := currentQPS
+					if len(kafkaMetrics["qps"].Points) > 0 {
+						lastPoint := kafkaMetrics["qps"].Points[len(kafkaMetrics["qps"].Points)-1]
+						if elapsed > lastPoint.Time {
+							dt := elapsed - lastPoint.Time
+							instantQPS = float64(total-lastTotal) / dt
+						}
+					}
+					kafkaMetrics["qps"].Points = appendPoint(kafkaMetrics["qps"].Points, TimeSeriesPoint{Time: elapsed, Value: instantQPS}, maxPoints)
+
+					// Latency Avg
+					if kafkaMetrics["latency_avg"] == nil {
+						kafkaMetrics["latency_avg"] = &MetricTimeSeries{Name: "latency_avg", Label: "Avg Latency", Unit: "ms", Color: kafkaMetricColors["latency_avg"], Points: make([]TimeSeriesPoint, 0, maxPoints)}
+					}
+					kafkaMetrics["latency_avg"].Points = appendPoint(kafkaMetrics["latency_avg"].Points, TimeSeriesPoint{Time: elapsed, Value: avgMs}, maxPoints)
+
+					// Latency Max
+					if kafkaMetrics["latency_max"] == nil {
+						kafkaMetrics["latency_max"] = &MetricTimeSeries{Name: "latency_max", Label: "Max Latency", Unit: "ms", Color: kafkaMetricColors["latency_max"], Points: make([]TimeSeriesPoint, 0, maxPoints)}
+					}
+					kafkaMetrics["latency_max"].Points = appendPoint(kafkaMetrics["latency_max"].Points, TimeSeriesPoint{Time: elapsed, Value: maxMs}, maxPoints)
+
+					// Messages Total
+					if kafkaMetrics["messages_total"] == nil {
+						kafkaMetrics["messages_total"] = &MetricTimeSeries{Name: "messages_total", Label: "Messages Total", Unit: "count", Color: kafkaMetricColors["messages_total"], Points: make([]TimeSeriesPoint, 0, maxPoints)}
+					}
+					kafkaMetrics["messages_total"].Points = appendPoint(kafkaMetrics["messages_total"].Points, TimeSeriesPoint{Time: elapsed, Value: float64(total)}, maxPoints)
+
+					// Success
+					if kafkaMetrics["success"] == nil {
+						kafkaMetrics["success"] = &MetricTimeSeries{Name: "success", Label: "Success", Unit: "count", Color: kafkaMetricColors["success"], Points: make([]TimeSeriesPoint, 0, maxPoints)}
+					}
+					kafkaMetrics["success"].Points = appendPoint(kafkaMetrics["success"].Points, TimeSeriesPoint{Time: elapsed, Value: float64(success)}, maxPoints)
+
+					// Errors
+					if kafkaMetrics["errors"] == nil {
+						kafkaMetrics["errors"] = &MetricTimeSeries{Name: "errors", Label: "Errors", Unit: "count", Color: kafkaMetricColors["errors"], Points: make([]TimeSeriesPoint, 0, maxPoints)}
+					}
+					kafkaMetrics["errors"].Points = appendPoint(kafkaMetrics["errors"].Points, TimeSeriesPoint{Time: elapsed, Value: float64(errors)}, maxPoints)
+
+					lastTotal = total
+				} else {
+					retryCount++
+					if retryCount > 10 && retryCount%10 == 0 {
+						log.LogVf("LiveStats not found for run %d after %d ticks", runID, retryCount)
+					}
+				}
+
+				// Convert maps to slices for JSON
+				kafkaMetricsSlice := make([]MetricTimeSeries, 0, len(kafkaMetrics))
+				for _, v := range kafkaMetrics {
+					kafkaMetricsSlice = append(kafkaMetricsSlice, *v)
+				}
+
+				// Build consumer services info with metrics
+				consumerServicesSlice := make([]ConsumerServiceInfo, len(consumerServices))
+				for i, svc := range consumerServices {
+					svcMetrics := consumerServiceMetrics[svc.Name]
+					metricsSlice := make([]MetricTimeSeries, 0, len(svcMetrics))
+					for _, v := range svcMetrics {
+						metricsSlice = append(metricsSlice, *v)
+					}
+					consumerServicesSlice[i] = ConsumerServiceInfo{
+						Name:    svc.Name,
+						URL:     svc.URL,
+						Metrics: metricsSlice,
+					}
+				}
+
+				// Update progress
+				newProgress := &LiveProgress{
+					RunID:            runID,
+					Status:           "running",
+					StartTime:        startTime,
+					ElapsedSeconds:   elapsed,
+					ExpectedSeconds:  expectedSeconds,
+					ProgressPercent:  progressPercent,
+					RequestsTotal:    total,
+					RequestsSuccess:  success,
+					RequestsError:    errors,
+					CurrentQPS:       currentQPS,
+					TargetQPS:        targetQPS,
+					LatencyAvg:       avgMs,
+					LatencyMin:       minMs,
+					LatencyMax:       maxMs,
+					KafkaTopic:       kafkaTopic,
+					KafkaMetrics:     kafkaMetricsSlice,
+					ConsumerServices: consumerServicesSlice,
+				}
+				UpdateProgress(runID, newProgress)
+			}
+		}
+	}()
+
+	// Return stop function
+	return func(finalStatus string) {
+		close(stopCh)
+		<-doneCh
+
+		elapsed := time.Since(startTime).Seconds()
+
+		var total, success, errors int64
+		var avgMs, minMs, maxMs float64
+		liveStats := periodic.GetLiveStatsByRunID(runID)
+		if liveStats != nil {
+			total, success, errors, avgMs, minMs, maxMs = liveStats.GetSnapshot()
+		}
+
+		var currentQPS float64
+		if elapsed > 0 {
+			currentQPS = float64(total) / elapsed
+		}
+
+		log.Infof("Progress monitor completed for run %d: %d requests, %.1f qps", runID, total, currentQPS)
+
+		// Convert maps to slices
+		kafkaMetricsSlice := make([]MetricTimeSeries, 0, len(kafkaMetrics))
+		for _, v := range kafkaMetrics {
+			kafkaMetricsSlice = append(kafkaMetricsSlice, *v)
+		}
+
+		// Build consumer services info with final metrics
+		consumerServicesSlice := make([]ConsumerServiceInfo, len(consumerServices))
+		for i, svc := range consumerServices {
+			svcMetrics := consumerServiceMetrics[svc.Name]
+			metricsSlice := make([]MetricTimeSeries, 0, len(svcMetrics))
+			for _, v := range svcMetrics {
+				metricsSlice = append(metricsSlice, *v)
+			}
+			consumerServicesSlice[i] = ConsumerServiceInfo{
+				Name:    svc.Name,
+				URL:     svc.URL,
+				Metrics: metricsSlice,
+			}
+		}
+
+		finalProgress := &LiveProgress{
+			RunID:            runID,
+			Status:           finalStatus,
+			StartTime:        startTime,
+			ElapsedSeconds:   elapsed,
+			ExpectedSeconds:  expectedSeconds,
+			ProgressPercent:  100,
+			RequestsTotal:    total,
+			RequestsSuccess:  success,
+			RequestsError:    errors,
+			CurrentQPS:       currentQPS,
+			TargetQPS:        targetQPS,
+			LatencyAvg:       avgMs,
+			LatencyMin:       minMs,
+			LatencyMax:       maxMs,
+			KafkaTopic:       kafkaTopic,
+			KafkaMetrics:     kafkaMetricsSlice,
+			ConsumerServices: consumerServicesSlice,
+		}
+		UpdateProgress(runID, finalProgress)
+
+		// Clean up after delay
+		go func() {
+			time.Sleep(10 * time.Second)
+			ClearProgress(runID)
+			periodic.ClearLiveStatsByRunID(runID)
+		}()
+	}
+}
+
+// appendPoint adds a point to time series, keeping max size
+func appendPoint(series []TimeSeriesPoint, point TimeSeriesPoint, maxSize int) []TimeSeriesPoint {
+	series = append(series, point)
+	if len(series) > maxSize {
+		series = series[1:]
+	}
+	return series
 }

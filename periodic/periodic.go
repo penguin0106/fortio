@@ -32,6 +32,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"fortio.org/fortio/jrpc"
@@ -236,6 +237,116 @@ type RunnerOptions struct {
 	ID string
 	// Time the object got first normalized, used to generate the unique ID above.
 	genTime *time.Time
+	// Live stats counters (atomic, safe for concurrent access)
+	liveStats *LiveStats `json:"-"`
+}
+
+// LiveStats holds atomic counters for real-time progress monitoring
+type LiveStats struct {
+	totalRequests   int64
+	successRequests int64
+	errorRequests   int64
+	totalLatencyNs  int64 // Sum of all latencies in nanoseconds for averaging
+	minLatencyNs    int64
+	maxLatencyNs    int64
+	StartTime       time.Time
+	ExpectedEnd     time.Time
+}
+
+// Global map for LiveStats by RunID (for UI access)
+var (
+	globalLiveStats      = make(map[int64]*LiveStats)
+	globalLiveStatsMutex sync.RWMutex
+)
+
+// GetLiveStatsByRunID returns LiveStats for a specific run ID
+func GetLiveStatsByRunID(runID int64) *LiveStats {
+	globalLiveStatsMutex.RLock()
+	defer globalLiveStatsMutex.RUnlock()
+	return globalLiveStats[runID]
+}
+
+// SetLiveStatsByRunID stores LiveStats for a specific run ID
+func SetLiveStatsByRunID(runID int64, ls *LiveStats) {
+	globalLiveStatsMutex.Lock()
+	globalLiveStats[runID] = ls
+	globalLiveStatsMutex.Unlock()
+}
+
+// ClearLiveStatsByRunID removes LiveStats for a specific run ID
+func ClearLiveStatsByRunID(runID int64) {
+	globalLiveStatsMutex.Lock()
+	delete(globalLiveStats, runID)
+	globalLiveStatsMutex.Unlock()
+}
+
+// NewLiveStats creates a new LiveStats instance
+func NewLiveStats(start time.Time, duration time.Duration) *LiveStats {
+	ls := &LiveStats{
+		StartTime:   start,
+		ExpectedEnd: start.Add(duration),
+	}
+	// Use atomic store for initial max int64 value
+	atomic.StoreInt64(&ls.minLatencyNs, 1<<62) // Use 2^62 to avoid overflow issues
+	return ls
+}
+
+// RecordRequest records a request result atomically
+func (ls *LiveStats) RecordRequest(success bool, latencyNs int64) {
+	if ls == nil {
+		return
+	}
+	atomic.AddInt64(&ls.totalRequests, 1)
+	if success {
+		atomic.AddInt64(&ls.successRequests, 1)
+	} else {
+		atomic.AddInt64(&ls.errorRequests, 1)
+	}
+	atomic.AddInt64(&ls.totalLatencyNs, latencyNs)
+
+	// Update min latency atomically
+	for {
+		oldMin := atomic.LoadInt64(&ls.minLatencyNs)
+		if latencyNs >= oldMin {
+			break
+		}
+		if atomic.CompareAndSwapInt64(&ls.minLatencyNs, oldMin, latencyNs) {
+			break
+		}
+	}
+
+	// Update max latency atomically
+	for {
+		oldMax := atomic.LoadInt64(&ls.maxLatencyNs)
+		if latencyNs <= oldMax {
+			break
+		}
+		if atomic.CompareAndSwapInt64(&ls.maxLatencyNs, oldMax, latencyNs) {
+			break
+		}
+	}
+}
+
+// GetSnapshot returns current stats atomically
+func (ls *LiveStats) GetSnapshot() (total, success, errors int64, avgLatencyMs, minLatencyMs, maxLatencyMs float64) {
+	if ls == nil {
+		return
+	}
+	total = atomic.LoadInt64(&ls.totalRequests)
+	success = atomic.LoadInt64(&ls.successRequests)
+	errors = atomic.LoadInt64(&ls.errorRequests)
+	totalLatency := atomic.LoadInt64(&ls.totalLatencyNs)
+	minNs := atomic.LoadInt64(&ls.minLatencyNs)
+	maxNs := atomic.LoadInt64(&ls.maxLatencyNs)
+
+	if total > 0 {
+		avgLatencyMs = float64(totalLatency) / float64(total) / 1e6
+	}
+	if minNs < 1<<61 { // Check if it was actually set
+		minLatencyMs = float64(minNs) / 1e6
+	}
+	maxLatencyMs = float64(maxNs) / 1e6
+	return
 }
 
 // RunnerResults encapsulates the actual QPS observed and duration histogram.
@@ -290,6 +401,11 @@ type PeriodicRunner interface { //nolint:revive // stutter is ok for this (can't
 // Unexposed implementation details for PeriodicRunner.
 type periodicRunner struct {
 	RunnerOptions
+}
+
+// GetLiveStats returns the live stats for real-time progress monitoring
+func (r *RunnerOptions) GetLiveStats() *LiveStats {
+	return r.liveStats
 }
 
 var (
@@ -524,6 +640,13 @@ func (r *periodicRunner) Run() RunnerResults { //nolint:funlen // long in part b
 		log.Warnf("Context array was of %d len, replacing with %d clone of first one", runnersLen, len(r.Runners))
 	}
 	start := time.Now()
+	// Initialize live stats for real-time progress tracking
+	r.liveStats = NewLiveStats(start, r.Duration)
+	// Register in global map for UI access (RunID is set by rapi before calling Run)
+	if r.RunID > 0 {
+		SetLiveStatsByRunID(r.RunID, r.liveStats)
+		log.Infof("Registered LiveStats for RunID %d", r.RunID)
+	}
 	// Histogram  and stats for Function duration - millisecond precision
 	functionDuration := stats.NewHistogram(r.Offset.Seconds(), r.Resolution)
 	errorsDuration := stats.NewHistogram(r.Offset.Seconds(), r.Resolution)
@@ -827,6 +950,8 @@ MainLoop:
 		if !status {
 			errTimes.Record(latency)
 		}
+		// Record for live stats (real-time progress)
+		r.liveStats.RecordRequest(status, int64(latency*1e9))
 		// if using QPS / pre calc expected call # mode:
 		if useQPS { //nolint:nestif // yup.
 			for {

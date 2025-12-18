@@ -1,26 +1,40 @@
-<!DOCTYPE html><html><head><title>Φορτίο v{{.Version}}</title>
-<script src="{{.Version}}/static/js/fortio_chart.js"></script>
-<link rel="icon" href="{{.Version}}/static/img/favicon.ico" />
-<link rel="stylesheet" href="{{.Version}}/static/css/fortio.css">
-<style>
-.checkmark {
-  text-shadow: 2px 1px #000;
-  color: olive;
-  font-size: 1.4em;
-}
-</style>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Φορτίο v{{.Version}} - Синхронизация</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="{{.Version}}/static/js/fortio_chart.js"></script>
+  <link rel="icon" href="{{.Version}}/static/img/favicon.ico" />
+  <link rel="stylesheet" href="{{.Version}}/static/css/fortio.css">
+  <style>
+    .checkmark { color: #22c55e; font-weight: bold; }
+    .sync-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    .sync-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 0.85rem; }
+  </style>
 </head>
 {{template "header" .}}
-<h1>Φορτίο (fortio) v{{.Version}} syncing</h1>
-<p>Syncing {{.URL}}
-<progress id="progressBar" style="width: 100%"></progress>
+
+<div class="page-header">
+  <div class="header-content">
+    <h1>Φορτίο <span class="version-badge">v{{.Version}}</span></h1>
+    <p class="header-subtitle">📥 Синхронизация данных</p>
+  </div>
+</div>
+
+<div class="form-section">
+  <h3 class="section-title">🔄 Синхронизация</h3>
+  <div class="graph-link" style="margin-bottom: 16px;">{{.URL}}</div>
+  <progress id="progressBar" style="width: 100%; height: 16px;"></progress>
+</div>
+
 <script>
-function setPB(val, max = null) {
-  var pb = document.getElementById('progressBar')
-  pb.value = val
-  if (max) {
-    pb.max = max
-  }
+function setPB(val, max) {
+  var pb = document.getElementById('progressBar');
+  pb.value = val;
+  if (max) pb.max = max;
 }
 </script>
-<br />
