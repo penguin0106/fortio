@@ -1,0 +1,33 @@
+# Combined Dockerfile for docker-compose
+# This combines Dockerfile.build and Dockerfile into a single multi-stage build
+
+# Stage 1: Build environment
+FROM golang:1.25.1 AS build-env
+# Need gcc for -race test (and some linters though those work with CGO_ENABLED=0)
+RUN apt-get -y update && \
+  apt-get --no-install-recommends -y upgrade && \
+  DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends -y install libc6-dev apt-transport-https
+
+WORKDIR /build
+
+# Stage 2: Build the binary
+FROM build-env AS build
+COPY . fortio
+RUN cd fortio && CGO_ENABLED=0 go build -a -ldflags "-s -w" -o /build/result/fortio ./cmd/fortio
+
+# Stage 3: Minimal image with just the binary
+FROM scratch AS release
+COPY --from=build /build/result/fortio /usr/bin/fortio
+EXPOSE 8078
+EXPOSE 8079
+EXPOSE 8080
+EXPOSE 8081
+# configmap (dynamic flags)
+VOLUME /etc/fortio
+# data files etc
+VOLUME /var/lib/fortio
+WORKDIR /var/lib/fortio
+ENTRYPOINT ["/usr/bin/fortio"]
+# start the server mode (grpc ping on 8079, http echo and UI on 8080, redirector on 8081) by default
+CMD ["server", "-config-dir", "/etc/fortio"]
+
