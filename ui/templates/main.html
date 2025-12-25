@@ -374,14 +374,23 @@ function updateConsumerCharts(services) {
     var sectionId = 'consumer-section-' + svc.name.replace(/[^a-zA-Z0-9]/g, '_');
     var existingSection = document.getElementById(sectionId);
     
+    // Determine badge style based on type
+    var isFunction = svc.type === 'function';
+    var badgeStyle = isFunction 
+      ? 'background: linear-gradient(135deg, #8b5cf6, #6366f1);' 
+      : 'background: #10b981;';
+    var typeLabel = isFunction ? '⚡ Lambda' : '🔧 Сервис';
+    var nameDisplay = svc.function ? svc.name + ' (' + svc.function + ')' : svc.name;
+    
     if (!existingSection) {
       // Create section for this service
       var section = document.createElement('div');
       section.id = sectionId;
       section.className = 'consumer-service-section';
       section.style.cssText = 'margin-bottom: 24px; padding: 16px; background: var(--bg-secondary, #f8fafc); border-radius: 8px;';
-      section.innerHTML = '<h5 style="margin: 0 0 12px 0; color: var(--text-primary, #1e293b); font-size: 1rem; display: flex; align-items: center; gap: 8px;">' +
-        '<span style="background: var(--accent, #3b82f6); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;">' + svc.name + '</span>' +
+      section.innerHTML = '<h5 style="margin: 0 0 12px 0; color: var(--text-primary, #1e293b); font-size: 1rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">' +
+        '<span style="' + badgeStyle + ' color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">' + typeLabel + '</span>' +
+        '<span style="font-weight: 600;">' + nameDisplay + '</span>' +
         '<span style="font-size: 0.8rem; color: var(--text-secondary);">' + svc.url + '</span></h5>' +
         '<div id="' + sectionId + '-charts" class="charts-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;"></div>';
       grid.appendChild(section);
@@ -741,14 +750,20 @@ runTestForDuration({{.TestExpectedDurationSeconds}});
               </label>
               <div class="form-group" style="margin-top: 16px;">
                 <label class="form-label">
-                  <span class="label-text">Consumer Service Metrics (опционально)</span>
+                  <span class="label-text">Consumer Metrics Sources (опционально)</span>
+                  <span class="label-hint" style="font-size: 0.8rem; color: var(--text-secondary);">Сервисы или Lambda функции для сбора метрик</span>
                 </label>
                 <div id="consumer-services-list">
                   <!-- Consumer services will be added here dynamically -->
                 </div>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="addConsumerService()" style="margin-top: 8px;">
-                  + Добавить Consumer Service
-                </button>
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="addConsumerService('service')">
+                    + Сервис
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="addConsumerService('function')" style="background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white;">
+                    + Lambda функция
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -921,22 +936,73 @@ function toggleKafkaFields() {
 
 var consumerServiceCount = 0;
 
-function addConsumerService(name, url) {
+function addConsumerService(type, prefill) {
+  prefill = prefill || {};
   var list = document.getElementById('consumer-services-list');
+  var id = 'consumer-' + (++consumerServiceCount);
   var div = document.createElement('div');
   div.className = 'consumer-service-item';
-  div.style.cssText = 'display: flex; gap: 8px; margin-bottom: 8px; align-items: center;';
-  div.innerHTML = 
-    '<input type="text" name="kafka-consumer-service-name[]" class="form-input" placeholder="Имя сервиса" value="' + (name || '') + '" style="flex: 1; min-width: 120px;" />' +
-    '<input type="text" name="kafka-consumer-service-url[]" class="form-input" placeholder="http://service:8080/metrics" value="' + (url || '') + '" style="flex: 2;" />' +
-    '<button type="button" class="btn btn-danger btn-sm" onclick="removeConsumerService(this)" style="padding: 4px 8px;">✕</button>';
+  div.id = id;
+  div.style.cssText = 'padding: 12px; margin-bottom: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--bg-secondary, #f8fafc);';
+  
+  if (type === 'service') {
+    div.innerHTML = 
+      '<input type="hidden" name="consumer-type[]" value="service">' +
+      '<div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">' +
+        '<span style="background: #10b981; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Сервис</span>' +
+        '<button type="button" class="btn btn-danger btn-sm" onclick="removeConsumerService(\'' + id + '\')" style="margin-left: auto; padding: 2px 8px;">✕</button>' +
+      '</div>' +
+      '<div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px;">' +
+        '<input type="text" name="consumer-name[]" class="form-input" placeholder="Имя (напр. my-service)" value="' + (prefill.name || '') + '" required />' +
+        '<input type="text" name="consumer-url[]" class="form-input" placeholder="http://service:8080/metrics" value="' + (prefill.url || '') + '" required />' +
+      '</div>' +
+      '<input type="hidden" name="consumer-function[]" value="">' +
+      '<input type="hidden" name="consumer-namespace[]" value="">' +
+      '<input type="hidden" name="consumer-autodiscover[]" value="false">';
+  } else {
+    // Lambda function
+    div.innerHTML = 
+      '<input type="hidden" name="consumer-type[]" value="function">' +
+      '<div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">' +
+        '<span style="background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Lambda</span>' +
+        '<button type="button" class="btn btn-danger btn-sm" onclick="removeConsumerService(\'' + id + '\')" style="margin-left: auto; padding: 2px 8px;">✕</button>' +
+      '</div>' +
+      '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">' +
+        '<input type="text" name="consumer-name[]" class="form-input" placeholder="Отображаемое имя" value="' + (prefill.name || '') + '" required />' +
+        '<input type="text" name="consumer-function[]" class="form-input" placeholder="Имя функции (напр. my-function)" value="' + (prefill.function || '') + '" required />' +
+      '</div>' +
+      '<div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;">' +
+        '<input type="text" name="consumer-url[]" class="form-input" placeholder="URL метрик (или оставьте пустым для авто)" value="' + (prefill.url || '') + '" />' +
+        '<label style="display: flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer;">' +
+          '<input type="checkbox" name="consumer-autodiscover[]" value="true" ' + (prefill.autodiscover ? 'checked' : '') + ' onchange="toggleFunctionUrlField(this)">' +
+          '<span style="font-size: 0.85rem;">Авто</span>' +
+        '</label>' +
+      '</div>' +
+      '<div style="margin-top: 8px;">' +
+        '<input type="text" name="consumer-namespace[]" class="form-input" placeholder="Namespace (по умолчанию из ENV)" value="' + (prefill.namespace || '') + '" style="font-size: 0.85rem;" />' +
+        '<span style="font-size: 0.75rem; color: var(--text-secondary);">Оставьте пустым для использования FUNCTION_NAMESPACE из ENV</span>' +
+      '</div>';
+  }
+  
   list.appendChild(div);
-  consumerServiceCount++;
 }
 
-function removeConsumerService(btn) {
-  btn.closest('.consumer-service-item').remove();
-  consumerServiceCount--;
+function removeConsumerService(id) {
+  var el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function toggleFunctionUrlField(checkbox) {
+  var container = checkbox.closest('.consumer-service-item');
+  var urlInput = container.querySelector('input[name="consumer-url[]"]');
+  if (checkbox.checked) {
+    urlInput.disabled = true;
+    urlInput.placeholder = 'Будет определён автоматически';
+    urlInput.value = '';
+  } else {
+    urlInput.disabled = false;
+    urlInput.placeholder = 'URL метрик';
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function() {

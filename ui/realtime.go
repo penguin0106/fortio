@@ -100,15 +100,22 @@ type MetricTimeSeries struct {
 
 // ConsumerServiceConfig holds consumer service configuration
 type ConsumerServiceConfig struct {
-	Name string `json:"name"` // User-defined service name
-	URL  string `json:"url"`  // Metrics endpoint URL
+	Type         string `json:"type"`                   // "service" or "function"
+	Name         string `json:"name"`                   // User-defined name
+	URL          string `json:"url,omitempty"`          // Metrics endpoint URL (for service or manual)
+	FunctionName string `json:"functionName,omitempty"` // Lambda function name
+	Namespace    string `json:"namespace,omitempty"`    // K8s namespace for function
+	AutoDiscover bool   `json:"autoDiscover,omitempty"` // Auto-discover function pod IP
+	ResolvedURL  string `json:"-"`                      // Internal: resolved URL
 }
 
 // ConsumerServiceInfo holds info about a consumer service and its metrics
 type ConsumerServiceInfo struct {
-	Name    string             `json:"name"`    // User-defined service name
-	URL     string             `json:"url"`     // Metrics endpoint URL
-	Metrics []MetricTimeSeries `json:"metrics"` // Metrics for this service
+	Type     string             `json:"type"`               // "service" or "function"
+	Name     string             `json:"name"`               // User-defined name
+	URL      string             `json:"url"`                // Resolved metrics endpoint URL
+	Function string             `json:"function,omitempty"` // Function name if type=function
+	Metrics  []MetricTimeSeries `json:"metrics"`            // Metrics for this service
 }
 
 // LiveProgress holds real-time test progress data

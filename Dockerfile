@@ -1,11 +1,10 @@
 # Build the binaries in larger image
-FROM docker.io/fortio/fortio.build:v82@sha256:612990ad14951b0bac39b20a65e1e571af68a1762a836e6aa63c36d8681d7ddf AS build
+# First build the build image: docker build -t fortio-build -f Dockerfile.build .
+FROM fortio-build AS build
 WORKDIR /build
 COPY --chown=build:build . fortio
-ARG MODE=install
-# We moved a lot of the logic into the Makefile so it can be reused in brew
-# but that also couples the 2, this expects to find binaries in the right place etc
-RUN make -C fortio official-build-version BUILD_DIR=/build MODE=${MODE}
+# Use build mode instead of install to avoid git version requirement
+RUN make -C fortio official-build BUILD_DIR=/build MODE=build OFFICIAL_BIN=/build/result/fortio
 
 # Minimal image with just the binary and certs
 FROM scratch AS release
@@ -24,3 +23,4 @@ WORKDIR /var/lib/fortio
 ENTRYPOINT ["/usr/bin/fortio"]
 # start the server mode (grpc ping on 8079, http echo and UI on 8080, redirector on 8081) by default
 CMD ["server", "-config-dir", "/etc/fortio"]
+

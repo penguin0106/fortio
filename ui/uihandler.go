@@ -1009,20 +1009,72 @@ func parseConnectionReuseRange(minV string, maxV string, value string) string {
 }
 
 // parseConsumerServicesFromForm parses consumer services from form data
-// Format: kafka-consumer-service-name[] and kafka-consumer-service-url[] arrays
+// Supports both services and lambda functions
 func parseConsumerServicesFromForm(r *http.Request) []ConsumerServiceConfig {
-	names := r.Form["kafka-consumer-service-name[]"]
-	urls := r.Form["kafka-consumer-service-url[]"]
+	types := r.Form["consumer-type[]"]
+	names := r.Form["consumer-name[]"]
+	urls := r.Form["consumer-url[]"]
+	functions := r.Form["consumer-function[]"]
+	namespaces := r.Form["consumer-namespace[]"]
+	autodiscovers := r.Form["consumer-autodiscover[]"]
 
 	var services []ConsumerServiceConfig
-	for i := 0; i < len(names) && i < len(urls); i++ {
-		name := strings.TrimSpace(names[i])
-		url := strings.TrimSpace(urls[i])
-		if name != "" && url != "" {
-			services = append(services, ConsumerServiceConfig{Name: name, URL: url})
+	for i := 0; i < len(types); i++ {
+		svcType := strings.TrimSpace(getFormValue(types, i))
+		name := strings.TrimSpace(getFormValue(names, i))
+		url := strings.TrimSpace(getFormValue(urls, i))
+
+		if name == "" {
+			continue
 		}
+
+		cfg := ConsumerServiceConfig{
+			Type: svcType,
+			Name: name,
+		}
+
+		if svcType == "function" {
+			cfg.FunctionName = strings.TrimSpace(getFormValue(functions, i))
+			cfg.Namespace = strings.TrimSpace(getFormValue(namespaces, i))
+			cfg.AutoDiscover = getFormValue(autodiscovers, i) == "true"
+
+			if cfg.FunctionName == "" {
+				continue // Skip functions without name
+			}
+
+			// Resolve URL
+			if cfg.AutoDiscover {
+				resolvedURL, err := ResolveFunctionURL(cfg.FunctionName, "", true, cfg.Namespace)
+				if err != nil {
+					log.Warnf("Failed to auto-discover function %s: %v", cfg.FunctionName, err)
+				} else {
+					cfg.ResolvedURL = resolvedURL
+					log.Infof("Auto-discovered function %s URL: %s", cfg.FunctionName, resolvedURL)
+				}
+			} else if url != "" {
+				cfg.URL = url
+				cfg.ResolvedURL = url
+			}
+		} else {
+			// Service type
+			if url == "" {
+				continue // Skip services without URL
+			}
+			cfg.URL = url
+			cfg.ResolvedURL = url
+		}
+
+		services = append(services, cfg)
 	}
 	return services
+}
+
+// getFormValue safely gets a value from a form array
+func getFormValue(arr []string, idx int) string {
+	if idx < len(arr) {
+		return arr[idx]
+	}
+	return ""
 }
 
 // startRunMonitor starts a goroutine that monitors the run progress and sends updates via SSE
@@ -1058,7 +1110,17 @@ func startRunMonitor(runID int64, targetQPS float64, expectedSeconds float64, ru
 	// Build ConsumerServices info for progress
 	consumerServicesInfo := make([]ConsumerServiceInfo, len(consumerServices))
 	for i, svc := range consumerServices {
-		consumerServicesInfo[i] = ConsumerServiceInfo{Name: svc.Name, URL: svc.URL, Metrics: []MetricTimeSeries{}}
+		resolvedURL := svc.ResolvedURL
+		if resolvedURL == "" {
+			resolvedURL = svc.URL
+		}
+		consumerServicesInfo[i] = ConsumerServiceInfo{
+			Type:     svc.Type,
+			Name:     svc.Name,
+			URL:      resolvedURL,
+			Function: svc.FunctionName,
+			Metrics:  []MetricTimeSeries{},
+		}
 		consumerServiceMetrics[svc.Name] = make(map[string]*MetricTimeSeries)
 		serviceColorIndex[svc.Name] = 0
 	}
@@ -1095,7 +1157,15 @@ func startRunMonitor(runID int64, targetQPS float64, expectedSeconds float64, ru
 				// Fetch consumer metrics from all configured services
 				elapsed := time.Since(startTime).Seconds()
 				for _, svc := range consumerServices {
-					metrics, err := FetchConsumerMetrics(svc.URL)
+					// Use ResolvedURL (which may be auto-discovered)
+					metricsURL := svc.ResolvedURL
+					if metricsURL == "" {
+						metricsURL = svc.URL
+					}
+					if metricsURL == "" {
+						continue // Skip if no URL available
+					}
+					metrics, err := FetchConsumerMetrics(metricsURL)
 					if err == nil {
 						svcMetrics := consumerServiceMetrics[svc.Name]
 						colorIdx := serviceColorIndex[svc.Name]
@@ -1208,10 +1278,16 @@ func startRunMonitor(runID int64, targetQPS float64, expectedSeconds float64, ru
 					for _, v := range svcMetrics {
 						metricsSlice = append(metricsSlice, *v)
 					}
+					resolvedURL := svc.ResolvedURL
+					if resolvedURL == "" {
+						resolvedURL = svc.URL
+					}
 					consumerServicesSlice[i] = ConsumerServiceInfo{
-						Name:    svc.Name,
-						URL:     svc.URL,
-						Metrics: metricsSlice,
+						Type:     svc.Type,
+						Name:     svc.Name,
+						URL:      resolvedURL,
+						Function: svc.FunctionName,
+						Metrics:  metricsSlice,
 					}
 				}
 
@@ -1275,10 +1351,16 @@ func startRunMonitor(runID int64, targetQPS float64, expectedSeconds float64, ru
 			for _, v := range svcMetrics {
 				metricsSlice = append(metricsSlice, *v)
 			}
+			resolvedURL := svc.ResolvedURL
+			if resolvedURL == "" {
+				resolvedURL = svc.URL
+			}
 			consumerServicesSlice[i] = ConsumerServiceInfo{
-				Name:    svc.Name,
-				URL:     svc.URL,
-				Metrics: metricsSlice,
+				Type:     svc.Type,
+				Name:     svc.Name,
+				URL:      resolvedURL,
+				Function: svc.FunctionName,
+				Metrics:  metricsSlice,
 			}
 		}
 
