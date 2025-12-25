@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Φορτίο v{{.Version}} - Результаты</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="{{.ChartJSPath}}"></script>
+  <link rel="icon" href="{{.Version}}/static/img/favicon.ico"/>
+  <link rel="stylesheet" href="{{.Version}}/static/css/fortio.css">
+</head>
+{{template "header" .}}
+
+<!-- Page Header -->
+<div class="page-header">
+  <div class="header-content">
+    <h1>Φορτίο <span class="version-badge">v{{.Version}}</span></h1>
+    <p class="header-subtitle">📊 Результаты нагрузочного тестирования{{.Extra}}</p>
+  </div>
+</div>
+
+<script src="{{.Version}}/static/js/fortio_chart.js"></script>
+<script>
+const RAPI_DATA_DIR = 'data/';
+var res, data;
+
+function fortio_load(url) {
+  var multi = document.getElementById("files");
+  var list = [url];
+  
+  if (multi && multi.selectedOptions !== undefined) {
+    list = multi.selectedOptions;
+  }
+  
+  if (list.length == 0) return;
+  
+  var urldiv = document.getElementById('url');
+  
+  if (list.length == 1) {
+    fetch(RAPI_DATA_DIR + url)
+      .then(doc => doc.json())
+      .then((out) => {
+        res = out;
+        data = fortioResultToJsChartData(res);
+        showChart(data);
+        urldiv.innerHTML = '<a href="browse?url=' + url + '">' + url + '</a> (<a href="data/' + url + '">json</a>)';
+      })
+      .catch(err => { 
+        urldiv.innerHTML = '<span style="color:#ef4444">Ошибка: ' + err + '</span>';
+      });
+  } else if (list.length == 2) {
+    urldiv.innerHTML = 'Сравнение двух результатов...';
+    
+    var urlA = list[0].value;
+    var dataPromiseA = fetch(RAPI_DATA_DIR + urlA)
+      .then(r => r.json())
+      .then(fortioResultToJsChartData);
+
+    var urlB = list[1].value;
+    var dataPromiseB = fetch(RAPI_DATA_DIR + urlB)
+      .then(r => r.json())
+      .then(fortioResultToJsChartData);
+
+    Promise.all([dataPromiseA, dataPromiseB]).then(arr => {
+      makeOverlayChart(arr[0], arr[1]);
+    });
+  } else {
+    urldiv.innerHTML = 'Сравнение ' + list.length + ' результатов...';
+    makeMultiChart();
+    
+    var promises = [];
+    for (var i = 0, len = list.length; i < len; i++) {
+      var v = list[len - i - 1].value;
+      (function (idx, u) {
+        promises.push(fetch(RAPI_DATA_DIR + u)
+          .then(doc => doc.json())
+          .then((out) => fortioAddToMultiResult(idx, out)));
+      })(i, v);
+    }
+    
+    Promise.all(promises).then(() => endMultiChart(list.length));
+  }
+}
+</script>
+
+{{if .DoRender}}
+<div class="form-section">
+  <h3 class="section-title">📈 Загрузка результата</h3>
+  <div class="graph-link" id="url">Загрузка {{.URL}}...</div>
+</div>
+<script>fortio_load('{{.URL}}')</script>
+
+{{else}}
+<div class="results-container">
+  
+  <div class="results-sidebar">
+    <h3>📁 Результаты</h3>
+    <div class="form-group">
+      <input type="text" id="searchinp" class="form-input" placeholder="🔍 Поиск..." value="{{.Search}}" />
+    </div>
+    <select id="files" class="results-list" size="10" onchange="fortio_load(value);" multiple>
+      {{range .PreselectedDataList}}
+      <option value="{{.Value}}.json" {{if .Selected}}selected{{end}}>{{.Value}}</option>
+      {{end}}
+    </select>
+    <p style="margin-top:12px; font-size:0.85rem; color:var(--text-secondary);">💡 Ctrl/Cmd + клик для сравнения</p>
+  </div>
+  
+  <div class="results-main">
+    <h3 class="section-title">📊 График</h3>
+    <div class="graph-link" id="url">Выберите результат...</div>
+    
+    <div class="chart-container" id="cc1" style="position: relative; height: 55vh; visibility: hidden;">
+      <canvas id="chart1"></canvas>
+    </div>
+    
+    <div id="running" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+      <p>👆 Выберите результат из списка слева</p>
+    </div>
+    
+    <div id="update" class="chart-options">
+      <form id="updtForm" action="javascript:updateChart()">
+        <input type="submit" value="Обновить" class="btn-secondary" style="padding: 8px 16px;" />
+        X: мин <input type="text" name="xmin" value="{{.ChartOptions.XMin}}" size="5" />
+        макс <input type="text" name="xmax" value="{{.ChartOptions.XMax}}" size="5" /> мс
+        <label><input name="xlog" type="checkbox" onclick="updateChart()" {{if .ChartOptions.XIsLog}}checked{{end}} /> Лог</label>
+        &nbsp;|&nbsp;
+        Y: мин <input type="text" name="ymin" value="{{.ChartOptions.YMin}}" size="5" />
+        макс <input type="text" name="ymax" value="{{.ChartOptions.YMax}}" size="5" />
+        <label><input name="ylog" type="checkbox" onclick="updateChart()" {{if .ChartOptions.YIsLog}}checked{{end}} /> Лог</label>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+const files = document.getElementById('files');
+const allFiles = Array.from(files.options);
+const search = document.getElementById('searchinp');
+
+function filterFiles() {
+  const regex = new RegExp(this.value, 'gi');
+  allFiles.forEach(opt => { opt.remove(); opt.selected = false; });
+  files.append(...allFiles.filter(opt => opt.text.match(regex)));
+}
+
+search.addEventListener('change', filterFiles);
+search.addEventListener('keyup', filterFiles);
+</script>
+{{end}}
+
+{{if .DoSearch}}
+<script>
+filterFiles.call(search);
+for (var i = 0; i < files.options.length; i++) files.options[i].selected = true;
+</script>
+{{end}}
+
+{{if .DoLoadSelected}}
+<script>fortio_load(files.value)</script>
+{{end}}
+
+<div class="utility-section" style="text-align: center; margin-top: 32px;">
+  <a href="./" class="btn-secondary" style="display: inline-block; padding: 12px 24px; text-decoration: none;">
+    ← Назад к тестированию
+  </a>
+</div>
+
+<div class="page-footer">
+  <p>Fortio v{{.Version}}</p>
+  <p><a href="https://fortio.org/" target="_blank">Документация</a> · <a href="https://github.com/fortio/fortio" target="_blank">GitHub</a></p>
+</div>
+
+</body>
+</html>
