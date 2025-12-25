@@ -170,7 +170,7 @@ GIT_TAG ?= $(shell git describe --tags --match 'v*' --dirty)
 DIST_VERSION ?= $(shell echo $(GIT_TAG) | sed -e "s/^v//")
 GIT_SHA ?= $(shell git rev-parse HEAD)
 # Main/default binary to build: (can be changed to build fcurl or echosrv instead)
-OFFICIAL_TARGET := fortio.org/fortio
+OFFICIAL_TARGET := fortio.org/fortio/cmd/fortio
 MODE ?= install
 
 debug-tags:

@@ -25,6 +25,33 @@ Fortio (Φορτίο) — это многофункциональный инст
 
 ---
 
+## Структура проекта
+
+```
+fortio/
+├── cmd/
+│   └── fortio/          # Точка входа (main.go)
+├── pkg/                 # Публичные пакеты (можно импортировать)
+│   ├── fhttp/           # HTTP runner и клиент
+│   ├── fgrpc/           # gRPC runner
+│   ├── fnet/            # Сетевые утилиты
+│   ├── periodic/        # Периодический runner (ядро)
+│   ├── stats/           # Статистика и гистограммы
+│   ├── tcprunner/       # TCP runner
+│   ├── udprunner/       # UDP runner
+│   ├── kafkarunner/     # Kafka runner
+│   ├── rapi/            # REST API
+│   └── version/         # Версия
+├── internal/            # Внутренние пакеты
+│   ├── cli/             # CLI логика
+│   ├── ui/              # Веб-интерфейс
+│   ├── bincommon/       # Общие флаги
+│   └── ...
+└── docs/                # Документация
+```
+
+---
+
 ## Сборка и установка
 
 ### Из исходников (Go 1.21+)
@@ -35,10 +62,10 @@ git clone https://github.com/fortio/fortio.git
 cd fortio
 
 # Соберите бинарник
-go build -o fortio .
+go build -o fortio ./cmd/fortio/
 
 # Или установите глобально
-go install .
+go install ./cmd/fortio/
 ```
 
 ### Docker
@@ -282,6 +309,106 @@ fortio load \
 | `-kafka-sasl-password` | SASL пароль |
 
 Полный список флагов: `fortio help` или `fortio load -h`
+
+---
+
+## Кастомный логгер (slog)
+
+Fortio использует собственный логгер на базе `log/slog`. Вы можете настроить его через функциональные опции.
+
+### Пример инициализации логгера
+
+```go
+package main
+
+import (
+    "os"
+
+    "fortio.org/fortio/internal/bincommon"
+    "fortio.org/fortio/internal/cli"
+    "fortio.org/fortio/pkg/log"
+)
+
+func main() {
+    os.Exit(cli.FortioMainWithConfig(&bincommon.FortioConfig{
+        LoggerSetup: func() {
+            logger := initLogger()
+            logger.SetAsDefault()
+        },
+    }))
+}
+
+func initLogger() *log.Logger {
+    logName := "myapp"
+    logRelease := "1.0.0"
+    logEnvironment := "local"
+    logLevel := "INFO"
+
+    if os.Getenv("LOGGER_NAME") != "" {
+        logName = os.Getenv("LOGGER_NAME")
+    }
+    if os.Getenv("RELEASE") != "" {
+        logRelease = os.Getenv("RELEASE")
+    }
+    if os.Getenv("ENVIRONMENT") != "" {
+        logEnvironment = os.Getenv("ENVIRONMENT")
+    }
+    if os.Getenv("LOG_LEVEL") != "" {
+        logLevel = os.Getenv("LOG_LEVEL")
+    }
+
+    return log.New(
+        log.WithName(logName),
+        log.WithRelease(logRelease),
+        log.WithEnvironment(logEnvironment),
+        log.WithLevelString(logLevel),
+    )
+}
+```
+
+### Опции логгера
+
+| Опция | Описание |
+|-------|----------|
+| `log.WithName(string)` | Имя логгера/приложения |
+| `log.WithRelease(string)` | Версия релиза |
+| `log.WithEnvironment(string)` | Окружение (local, dev, prod) |
+| `log.WithLevel(log.Level)` | Уровень логирования |
+| `log.WithLevelString(string)` | Уровень из строки (DEBUG, INFO, WARN, ERROR) |
+| `log.WithOutput(io.Writer)` | Вывод (по умолчанию stderr) |
+| `log.WithHandler(slog.Handler)` | Кастомный slog.Handler |
+
+### API пакета pkg/log
+
+| Функция | Описание |
+|---------|----------|
+| `log.New(opts...)` | Создаёт новый Logger с опциями |
+| `log.SetDefault(slog.Logger)` | Устанавливает slog.Logger как глобальный |
+| `log.SetLevel(log.Level)` | Устанавливает уровень логирования |
+| `log.Infof/Debugf/Warnf/Errf` | Форматированное логирование |
+| `log.S(level, msg, attrs...)` | Structured logging с атрибутами |
+| `log.Slog()` | Возвращает slog.Logger для прямого доступа |
+
+### Уровни логирования
+
+```go
+log.Debug    // 0 - отладка
+log.Verbose  // 1 - подробно  
+log.Info     // 2 - информация (default)
+log.Warning  // 3 - предупреждения
+log.Error    // 4 - ошибки
+log.Critical // 5 - критические
+log.Fatal    // 6 - фатальные
+```
+
+### ENV переменные для логгера
+
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `LOGGER_NAME` | Имя логгера | `fortio` |
+| `RELEASE` | Версия релиза | `0.0.0` |
+| `ENVIRONMENT` | Окружение | `local` |
+| `LOG_LEVEL` | Уровень логирования | `INFO` |
 
 ---
 
