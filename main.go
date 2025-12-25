@@ -1,17 +1,3 @@
-// Copyright 2022 Fortio Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package main
 
 import (
@@ -20,15 +6,15 @@ import (
 	"fortio.org/fortio/cli"
 )
 
-// This file content moved to cli/fortio_main.go so it can be reused in variants of fortio
-// like fortiotel (fortio with opentelemetry)
+// Содержимое этого файла перемещено в cli/fortio_main.go, чтобы его можно было
+// переиспользовать в вариантах fortio, таких как fortiotel (fortio с opentelemetry)
 
 func main() {
-	os.Exit(cli.FortioMain(nil /* no hook needed */))
+	os.Exit(cli.FortioMain(nil /* хук не нужен */))
 }
 
-// Same as real above but for testscript/txtar tests.
+// То же самое, что и выше, но для тестов testscript/txtar.
 
 func Main() int {
-	return cli.FortioMain(nil /* no hook needed */)
+	return cli.FortioMain(nil /* хук не нужен */)
 }

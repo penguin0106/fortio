@@ -1,2 +1,2 @@
-// Deprecated: This package moved to [fortio.org/dflag].
+// Устаревший: Этот пакет переместился в [fortio.org/dflag].
 package dflag // import fortio.org/fortio/dflag

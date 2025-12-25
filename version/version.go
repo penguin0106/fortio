@@ -1,54 +1,39 @@
-// Copyright 2017 Fortio Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// Package version for fortio holds version information and build information.
-// The reusable library part and examples moved to [fortio.org/version].
+// Пакет version для fortio содержит информацию о версии и сборке.
+// Переиспользуемая библиотечная часть и примеры перемещены в [fortio.org/version].
 package version // import "fortio.org/fortio/version"
 import (
 	"fortio.org/version"
 )
 
 var (
-	// The following are (re)computed in init().
+	// Следующие переменные (пере)вычисляются в init().
 	shortVersion = "dev"
 	longVersion  = "unknown long"
 	fullVersion  = "unknown full"
 )
 
-// Short returns the 3 digit short fortio version string Major.Minor.Patch
-// it matches the project git tag (without the leading v) or "dev" when
-// not built from tag / not `go install fortio.org/fortio@latest`
-// version.Short() is the overall project version (used to version json
-// output too).
+// Short возвращает 3-значную короткую строку версии fortio Major.Minor.Patch
+// соответствует git тегу проекта (без ведущего v) или "dev" когда
+// не собрано из тега / не `go install fortio.org/fortio@latest`
+// version.Short() - общая версия проекта (используется также для версионирования json вывода).
 func Short() string {
 	return shortVersion
 }
 
-// Long returns the long fortio version and build information.
-// Format is "X.Y.X hash go-version processor os".
+// Long возвращает длинную версию fortio и информацию о сборке.
+// Формат: "X.Y.X hash go-version processor os".
 func Long() string {
 	return longVersion
 }
 
-// Full returns the Long version + all the run time BuildInfo, ie
-// all the dependent modules and version and hash as well.
+// Full возвращает Long версию + всю информацию BuildInfo времени выполнения, т.е.
+// все зависимые модули и их версии и хеши.
 func Full() string {
 	return fullVersion
 }
 
-// This "burns in" the fortio version. we need to get the "right" versions though.
-// depending if we are a module or main.
-func init() { //nolint:gochecknoinits // we do need an init for this
+// Это "прошивает" версию fortio. Нужно получить "правильные" версии.
+// в зависимости от того, являемся ли мы модулем или main.
+func init() { //nolint:gochecknoinits // нам действительно нужен init для этого
 	shortVersion, longVersion, fullVersion = version.FromBuildInfoPath("fortio.org/fortio")
 }

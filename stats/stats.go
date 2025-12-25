@@ -1,17 +1,3 @@
-// Copyright 2017 Fortio Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package stats // import "fortio.org/fortio/stats"
 
 import (
@@ -29,6 +15,8 @@ import (
 
 // Counter is a type whose instances record values
 // and calculate stats (count, average, min, max, and stddev).
+// Counter — это тип, экземпляры которого записывают значения
+// и вычисляют статистику (количество, среднее, минимум, максимум и стандартное отклонение).
 type Counter struct {
 	Count        int64
 	Min          float64
@@ -43,6 +31,7 @@ func (c *Counter) Record(v float64) {
 }
 
 // RecordN efficiently records the same value N times.
+// RecordN эффективно записывает одно и то же значение N раз.
 func (c *Counter) RecordN(v float64, n int) {
 	isFirst := (c.Count == 0)
 	c.Count += int64(n)
@@ -61,6 +50,7 @@ func (c *Counter) RecordN(v float64, n int) {
 }
 
 // Avg returns the average.
+// Avg возвращает среднее значение.
 func (c *Counter) Avg() float64 {
 	if c.Count == 0 {
 		return 0.
@@ -69,6 +59,7 @@ func (c *Counter) Avg() float64 {
 }
 
 // StdDev returns the standard deviation.
+// StdDev возвращает стандартное отклонение.
 func (c *Counter) StdDev() float64 {
 	if c.Count == 0 {
 		return 0.
@@ -84,27 +75,31 @@ func (c *Counter) StdDev() float64 {
 }
 
 // Print prints stats.
+// Print выводит статистику.
 func (c *Counter) Print(out io.Writer, msg string) {
 	_, _ = fmt.Fprintf(out, "%s : count %d avg %.8g +/- %.4g min %g max %g sum %.9g\n",
 		msg, c.Count, c.Avg(), c.StdDev(), c.Min, c.Max, c.Sum)
 }
 
 // Log outputs the stats to the logger.
+// Log выводит статистику в логгер.
 func (c *Counter) Log(msg string) {
 	log.Infof("%s : count %d avg %.8g +/- %.4g min %g max %g sum %.9g",
 		msg, c.Count, c.Avg(), c.StdDev(), c.Min, c.Max, c.Sum)
 }
 
 // Reset clears the counter to reset it to original 'no data' state.
+// Reset очищает счетчик, сбрасывая его в исходное состояние 'без данных'.
 func (c *Counter) Reset() {
 	var empty Counter
 	*c = empty
 }
 
 // Transfer merges the data from src into this Counter and clears src.
+// Transfer объединяет данные из src в этот Counter и очищает src.
 func (c *Counter) Transfer(src *Counter) {
 	if src.Count == 0 {
-		return // nothing to do
+		return // nothing to do / ничего делать не нужно
 	}
 	if c.Count == 0 {
 		*c = *src // copy everything at once
@@ -124,11 +119,16 @@ func (c *Counter) Transfer(src *Counter) {
 }
 
 // Histogram - written in go with inspiration from https://github.com/facebook/wdt/blob/master/util/Stats.h
+// Histogram - написано на Go с вдохновением от https://github.com/facebook/wdt/blob/master/util/Stats.h
 
 // The intervals are [prev, current] so for "90" (previous is 80) the values in that bucket are >80 and <=90
 // that way a cumulative % up to that bucket means X% of the data <= 90 (or 100-X% > 90), works well for max too
 // There are 2 special buckets - the first one is from min to and including 0,
 // one after the last for value > last and up to max.
+// Интервалы [prev, current], так что для "90" (предыдущий 80) значения в этом бакете >80 и <=90
+// таким образом кумулятивный % до этого бакета означает X% данных <= 90 (или 100-X% > 90), хорошо работает и для max
+// Есть 2 специальных бакета - первый от min до включительно 0,
+// один после последнего для значений > last и до max.
 var (
 	histogramBucketValues = []int32{
 		0, 1, 2, 3, 4, 5, 6,
@@ -155,6 +155,9 @@ var (
 // Histogram extends Counter and adds a histogram.
 // Must be created using NewHistogram or anotherHistogram.Clone()
 // and not directly.
+// Histogram расширяет Counter и добавляет гистограмму.
+// Должен создаваться с помощью NewHistogram или anotherHistogram.Clone(),
+// а не напрямую.
 type Histogram struct {
 	Counter
 	Offset  float64 // offset applied to data before fitting into buckets
@@ -164,10 +167,14 @@ type Histogram struct {
 }
 
 // For export of the data:
+// Для экспорта данных:
 
 // Interval is a range from start to end.
 // Interval are left closed, open right expect the last one which includes Max.
 // i.e., [Start, End] with the next one being [PrevEnd, NextEnd].
+// Interval — это диапазон от start до end.
+// Интервалы закрыты слева, открыты справа, кроме последнего, который включает Max.
+// т.е. [Start, End], следующий будет [PrevEnd, NextEnd].
 type Interval struct {
 	Start float64
 	End   float64
@@ -175,6 +182,7 @@ type Interval struct {
 
 // Bucket is the data for 1 bucket: an Interval and the occurrence Count for
 // that interval.
+// Bucket — это данные для 1 бакета: Interval и количество вхождений Count для этого интервала.
 type Bucket struct {
 	Interval
 	Percent float64 // Cumulative percentile
@@ -182,6 +190,7 @@ type Bucket struct {
 }
 
 // Percentile value for the percentile.
+// Percentile — значение для перцентиля.
 type Percentile struct {
 	Percentile float64 // For this Percentile
 	Value      float64 // value at that Percentile
@@ -189,6 +198,8 @@ type Percentile struct {
 
 // HistogramData is the exported Histogram data, a sorted list of intervals
 // covering [Min, Max]. Pure data, so Counter for instance is flattened.
+// HistogramData — это экспортированные данные гистограммы, отсортированный список интервалов,
+// покрывающих [Min, Max]. Чистые данные, поэтому Counter, например, сглажен.
 type HistogramData struct {
 	Count       int64
 	Min         float64
@@ -202,6 +213,8 @@ type HistogramData struct {
 
 // NewHistogram creates a new histogram (sets up the buckets).
 // Divider value can not be zero, otherwise returns zero.
+// NewHistogram создает новую гистограмму (настраивает бакеты).
+// Значение Divider не может быть нулем, иначе возвращается nil.
 func NewHistogram(offset float64, divider float64) *Histogram {
 	if divider == 0 {
 		return nil
@@ -216,8 +229,10 @@ func NewHistogram(offset float64, divider float64) *Histogram {
 
 // Val2Bucket values are kept in two different structure
 // val2Bucket allows you reach between 0 and 1000 in constant time.
+// Val2Bucket значения хранятся в двух разных структурах
+// val2Bucket позволяет получить доступ к значениям от 0 до 1000 за константное время.
 //
-//nolint:gochecknoinits // we need to init these.
+//nolint:gochecknoinits // we need to init these / нам нужно их инициализировать.
 func init() {
 	val2Bucket = make([]int, maxArrayValue)
 	maxArrayValueIndex = -1
@@ -245,6 +260,8 @@ func init() {
 
 // lookUpIdx looks for scaledValue's index in histogramBucketValues
 // TODO: change linear time to O(log(N)) with binary search.
+// lookUpIdx ищет индекс scaledValue в histogramBucketValues
+// TODO: изменить линейное время на O(log(N)) с бинарным поиском.
 func lookUpIdx(scaledValue int) int {
 	scaledValue32 := int32(scaledValue) //nolint:gosec // we limit ourselves to 32 bits counts.
 	if scaledValue32 < maxArrayValue {  // constant
@@ -271,6 +288,7 @@ func (h *Histogram) RecordN(v float64, n int) {
 }
 
 // Records v value to count times.
+// Записывает значение v count раз.
 func (h *Histogram) record(v float64, count int) {
 	// Scaled value to bucketize - we used to subtract epsilon because the interval
 	// is open to the left ] start, end ] so when exactly on start it has
@@ -304,6 +322,14 @@ func (h *Histogram) record(v float64, count int) {
 // TODO: consider spreading the count of the bucket evenly from start to end
 // so the % grows by at least to 1/N on start of range, and for last range
 // when start == end we should get to that % faster.
+// CalcPercentile возвращает значение для входного перцентиля
+// например, для входа 90. возвращает оценку исходного порогового значения,
+// ниже которого находится 90.0% данных.
+// с 3 точками данных 10, 20, 30; p0-p33.33 == 10, p 66.666 = 20, p100 = 30
+// p33.333 - p66.666 = линейно между 10 и 20; так что p50 = 15
+// TODO: рассмотреть равномерное распределение количества бакета от начала до конца
+// так чтобы % рос как минимум на 1/N в начале диапазона, и для последнего диапазона
+// когда start == end мы должны достигать этого % быстрее.
 func (e *HistogramData) CalcPercentile(percentile float64) float64 {
 	if len(e.Data) == 0 {
 		log.Errf("Unexpected call to CalcPercentile(%g) with no data", percentile)
@@ -329,6 +355,8 @@ func (e *HistogramData) CalcPercentile(percentile float64) float64 {
 
 // Export translate the internal representation of the histogram data in
 // an externally usable one. Calculates the request Percentiles.
+// Export преобразует внутреннее представление данных гистограммы
+// во внешне используемое. Вычисляет запрошенные перцентили.
 func (h *Histogram) Export() *HistogramData {
 	var res HistogramData
 	res.Count = h.Counter.Count
@@ -391,6 +419,9 @@ func (h *Histogram) Export() *HistogramData {
 // CalcPercentiles calculates the requested percentile and adds them to the
 // HistogramData. Potential TODO: sort or assume sorting and calculate all
 // the percentiles in 1 pass (greater and greater values).
+// CalcPercentiles вычисляет запрошенные перцентили и добавляет их в
+// HistogramData. Потенциальный TODO: отсортировать или предполагать сортировку и вычислить все
+// перцентили за 1 проход (все большие и большие значения).
 func (e *HistogramData) CalcPercentiles(percentiles []float64) *HistogramData {
 	if e.Count == 0 {
 		return e
@@ -403,6 +434,8 @@ func (e *HistogramData) CalcPercentiles(percentiles []float64) *HistogramData {
 
 // Print dumps the histogram (and counter) to the provided writer.
 // Also calculates the percentile.
+// Print выводит гистограмму (и счетчик) в предоставленный writer.
+// Также вычисляет перцентиль.
 func (e *HistogramData) Print(out io.Writer, msg string) {
 	if len(e.Data) == 0 {
 		_, _ = fmt.Fprintf(out, "%s : no data\n", msg)
@@ -429,11 +462,15 @@ func (e *HistogramData) Print(out io.Writer, msg string) {
 // Print dumps the histogram (and counter) to the provided writer.
 // Also calculates the percentiles. Use Export() once and Print if you
 // are going to need the Export results too.
+// Print выводит гистограмму (и счетчик) в предоставленный writer.
+// Также вычисляет перцентили. Используйте Export() один раз и Print, если
+// вам также понадобятся результаты Export.
 func (h *Histogram) Print(out io.Writer, msg string, percentiles []float64) {
 	h.Export().CalcPercentiles(percentiles).Print(out, msg)
 }
 
 // Log Logs the histogram to the counter.
+// Log логирует гистограмму в счетчик.
 func (h *Histogram) Log(msg string, percentiles []float64) {
 	var b bytes.Buffer
 	w := bufio.NewWriter(&b)
@@ -443,15 +480,17 @@ func (h *Histogram) Log(msg string, percentiles []float64) {
 }
 
 // Reset clears the data. Reset it to NewHistogram state.
+// Reset очищает данные. Сбрасывает в состояние NewHistogram.
 func (h *Histogram) Reset() {
 	h.Counter.Reset()
-	// Leave Offset and Divider alone
+	// Leave Offset and Divider alone / Оставляем Offset и Divider без изменений
 	for i := 0; i < len(h.Hdata); i++ {
 		h.Hdata[i] = 0
 	}
 }
 
 // Clone returns a copy of the histogram.
+// Clone возвращает копию гистограммы.
 func (h *Histogram) Clone() *Histogram {
 	hCopy := NewHistogram(h.Offset, h.Divider)
 	hCopy.CopyFrom(h)
@@ -459,6 +498,7 @@ func (h *Histogram) Clone() *Histogram {
 }
 
 // CopyFrom sets the content of this object to a copy of the src.
+// CopyFrom устанавливает содержимое этого объекта в копию src.
 func (h *Histogram) CopyFrom(src *Histogram) {
 	h.Counter = src.Counter
 	h.copyHDataFrom(src)
@@ -467,6 +507,9 @@ func (h *Histogram) CopyFrom(src *Histogram) {
 // copyHDataFrom appends histogram data values to this object from the src.
 // Src histogram data values will be appended according to this object's
 // offset and divider.
+// copyHDataFrom добавляет значения данных гистограммы в этот объект из src.
+// Значения данных гистограммы src будут добавлены в соответствии с
+// offset и divider этого объекта.
 func (h *Histogram) copyHDataFrom(src *Histogram) {
 	if h.Divider == src.Divider && h.Offset == src.Offset {
 		for i := 0; i < len(h.Hdata); i++ {
@@ -483,6 +526,8 @@ func (h *Histogram) copyHDataFrom(src *Histogram) {
 
 // Merge two different histogram with different scale parameters
 // Lowest offset and highest divider value will be selected on new Histogram as scale parameters.
+// Merge объединяет две разные гистограммы с разными параметрами масштаба
+// Наименьший offset и наибольший divider будут выбраны для новой гистограммы как параметры масштаба.
 func Merge(h1 *Histogram, h2 *Histogram) *Histogram {
 	divider := h1.Divider
 	offset := h1.Offset
@@ -499,6 +544,7 @@ func Merge(h1 *Histogram, h2 *Histogram) *Histogram {
 }
 
 // Transfer merges the data from src into this Histogram and clears src.
+// Transfer объединяет данные из src в эту гистограмму и очищает src.
 func (h *Histogram) Transfer(src *Histogram) {
 	if src.Count == 0 {
 		return
@@ -514,6 +560,7 @@ func (h *Histogram) Transfer(src *Histogram) {
 }
 
 // ParsePercentiles extracts the percentiles from string (flag).
+// ParsePercentiles извлекает перцентили из строки (флага).
 func ParsePercentiles(percentiles string) ([]float64, error) {
 	percs := strings.Split(percentiles, ",") // will make a size 1 array for empty input!
 	res := make([]float64, 0, len(percs))
@@ -540,12 +587,15 @@ func ParsePercentiles(percentiles string) ([]float64, error) {
 
 // RoundToDigits rounds the input to digits number of digits after decimal point.
 // Note this incorrectly rounds the last digit of negative numbers.
+// RoundToDigits округляет ввод до digits знаков после запятой.
+// Обратите внимание, что это неправильно округляет последнюю цифру отрицательных чисел.
 func RoundToDigits(v float64, digits int) float64 {
 	p := math.Pow(10, float64(digits))
 	return math.Floor(v*p+0.5) / p
 }
 
 // Round rounds to 4 digits after the decimal point.
+// Round округляет до 4 знаков после запятой.
 func Round(v float64) float64 {
 	return RoundToDigits(v, 4)
 }
@@ -554,22 +604,30 @@ func Round(v float64) float64 {
 // Could be directly an alias for map[string]int but keeping the
 // outer struct for parity with Counter and Histogram and to keep
 // 1.38's API.
+// Occurrence — это тип, который хранит вхождения ключей.
+// Мог бы быть напрямую псевдонимом для map[string]int, но сохраняем
+// внешнюю структуру для паритета с Counter и Histogram и для сохранения
+// API версии 1.38.
 type Occurrence struct {
 	m map[string]int
 }
 
 // NewOccurrence create a new occurrence (map).
+// NewOccurrence создает новый экземпляр occurrence (карту).
 func NewOccurrence() *Occurrence {
 	return &Occurrence{m: make(map[string]int)}
 }
 
 // Record records a new occurrence of the key.
+// Record записывает новое вхождение ключа.
 func (o *Occurrence) Record(key string) {
 	o.m[key]++
 }
 
 // AggregateAndToString aggregates the data from the object into the passed in totals map
 // and returns a string suitable for printing usage counts per key of the incoming object.
+// AggregateAndToString агрегирует данные из объекта в переданную карту totals
+// и возвращает строку, подходящую для вывода счетчиков использования по ключу входящего объекта.
 func (o *Occurrence) AggregateAndToString(totals map[string]int) string {
 	var sb strings.Builder
 	sb.WriteString("[")

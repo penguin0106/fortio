@@ -1,17 +1,3 @@
-// Copyright 2020 Fortio Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package tcprunner
 
 import (
@@ -35,6 +21,8 @@ type TCPResultMap map[string]int64
 
 // RunnerResults is the aggregated result of an TCPRunner.
 // Also is the internal type used per thread/goroutine.
+// RunnerResults — это агрегированный результат TCPRunner.
+// Также является внутренним типом, используемым для каждого потока/горутины.
 type RunnerResults struct {
 	periodic.RunnerResults
 	TCPOptions
@@ -48,6 +36,8 @@ type RunnerResults struct {
 
 // Run tests TCP request fetching. Main call being run at the target QPS.
 // To be set as the Function in RunnerOptions.
+// Run тестирует TCP-запросы. Основной вызов, выполняемый с целевым QPS.
+// Должен быть установлен как Function в RunnerOptions.
 func (tcpstate *RunnerResults) Run(_ context.Context, t periodic.ThreadID) (bool, string) {
 	log.Debugf("Calling in %d", t)
 	_, err := tcpstate.client.Fetch()
@@ -61,6 +51,7 @@ func (tcpstate *RunnerResults) Run(_ context.Context, t periodic.ThreadID) (bool
 }
 
 // TCPOptions are options to the TCPClient.
+// TCPOptions — это опции для TCPClient.
 type TCPOptions struct {
 	Destination      string
 	Payload          []byte // what to send (and check)
@@ -70,12 +61,14 @@ type TCPOptions struct {
 
 // RunnerOptions includes the base RunnerOptions plus TCP specific
 // options.
+// RunnerOptions включает базовые RunnerOptions плюс специфичные для TCP опции.
 type RunnerOptions struct {
 	periodic.RunnerOptions
 	TCPOptions // Need to call Init() to initialize
 }
 
 // TCPClient is the client used for TCP echo testing.
+// TCPClient — это клиент, используемый для TCP эхо-тестирования.
 type TCPClient struct {
 	buffer        []byte
 	req           []byte
@@ -93,8 +86,10 @@ type TCPClient struct {
 
 var (
 	// TCPURLPrefix is the URL prefix for triggering TCP load.
+	// TCPURLPrefix — это URL-префикс для запуска TCP-нагрузки.
 	TCPURLPrefix = "tcp://"
 	// TCPStatusOK is the map key on success.
+	// TCPStatusOK — это ключ карты при успехе.
 	TCPStatusOK  = "OK"
 	errShortRead = errors.New("short read")
 	errLongRead  = errors.New("bug: long read")
@@ -103,6 +98,8 @@ var (
 
 // GeneratePayload generates a default 24 bytes unique payload for each runner thread and message sent
 // when no other payload is set.
+// GeneratePayload генерирует уникальную полезную нагрузку по умолчанию в 24 байта для каждого потока раннера и отправленного сообщения,
+// когда другая полезная нагрузка не установлена.
 func GeneratePayload(t int, i int64) []byte {
 	// up to 9999 connections and 999 999 999 999 (999B) request
 	s := fmt.Sprintf("Fortio\n%04d\n%012d", t, i) // 6+2+4+12 = 24 bytes
@@ -110,6 +107,7 @@ func GeneratePayload(t int, i int64) []byte {
 }
 
 // NewTCPClient creates and initialize and returns a client based on the TCPOptions.
+// NewTCPClient создает, инициализирует и возвращает клиент на основе TCPOptions.
 func NewTCPClient(o *TCPOptions) (*TCPClient, error) {
 	c := TCPClient{}
 	d := o.Destination
@@ -150,6 +148,7 @@ func (c *TCPClient) connect() (net.Conn, error) {
 
 func (c *TCPClient) Fetch() ([]byte, error) {
 	// Connect or reuse existing socket:
+	// Подключиться или повторно использовать существующий сокет:
 	conn := c.socket
 	c.messageCount++
 	reuse := (conn != nil)
@@ -162,9 +161,10 @@ func (c *TCPClient) Fetch() ([]byte, error) {
 	} else {
 		log.Debugf("[%d] Reusing socket %+v", c.connID, conn)
 	}
-	c.socket = nil // because of error returns and single retry
+	c.socket = nil // because of error returns and single retry / из-за возврата ошибок и одной повторной попытки
 	conErr := conn.SetReadDeadline(time.Now().Add(c.reqTimeout))
 	// Send the request:
+	// Отправить запрос:
 	if c.doGenerate {
 		c.req = GeneratePayload(c.connID, c.messageCount) // TODO write directly in buffer to avoid generating garbage for GC to clean
 	}
@@ -177,6 +177,7 @@ func (c *TCPClient) Fetch() ([]byte, error) {
 	if err != nil || conErr != nil {
 		if reuse {
 			// it's ok for the (idle) socket to die once, auto reconnect:
+			// это нормально, если (простаивающий) сокет умирает один раз, автоматическое переподключение:
 			log.Infof("Closing dead socket %v (%v)", conn, err)
 			conn.Close()
 			return c.Fetch() // recurse once
@@ -221,6 +222,7 @@ func (c *TCPClient) Fetch() ([]byte, error) {
 }
 
 // Close closes the last connection and returns the total number of sockets used for the run.
+// Close закрывает последнее соединение и возвращает общее количество сокетов, использованных для запуска.
 func (c *TCPClient) Close() int {
 	log.Debugf("Closing %p: %s socket count %d", c, c.destination, c.socketCount)
 	if c.socket != nil {
@@ -234,6 +236,8 @@ func (c *TCPClient) Close() int {
 
 // RunTCPTest runs a TCP test and returns the aggregated stats.
 // Some refactoring to avoid copy-pasta between the now 3 runners would be good.
+// RunTCPTest запускает TCP-тест и возвращает агрегированную статистику.
+// Было бы хорошо провести рефакторинг, чтобы избежать копипасты между тремя раннерами.
 func RunTCPTest(o *RunnerOptions) (*RunnerResults, error) {
 	o.RunType = "TCP"
 	log.Infof("Starting tcp test for %s with %d threads at %.1f qps", o.Destination, o.NumThreads, o.QPS)
@@ -252,6 +256,7 @@ func RunTCPTest(o *RunnerOptions) (*RunnerResults, error) {
 	for i := range numThreads {
 		r.Options().Runners[i] = &tcpstate[i]
 		// Create a client (and transport) and connect once for each 'thread'
+		// Создать клиент (и транспорт) и подключиться один раз для каждого 'потока'
 		tcpstate[i].client, err = NewTCPClient(&o.TCPOptions)
 		if tcpstate[i].client == nil {
 			return nil, fmt.Errorf("unable to create client %d for %s: %w", i, o.Destination, err)
@@ -264,12 +269,15 @@ func RunTCPTest(o *RunnerOptions) (*RunnerResults, error) {
 			}
 		}
 		// Set up the stats for each 'thread'
+		// Настроить статистику для каждого 'потока'
 		tcpstate[i].aborter = total.aborter
 		tcpstate[i].RetCodes = make(TCPResultMap)
 	}
 	total.RunnerResults = r.Run()
 	// Numthreads may have reduced, but it should be ok to accumulate 0s from
 	// unused ones. We also must clean up all the created clients.
+	// Количество потоков могло уменьшиться, но должно быть нормально накапливать 0 от
+	// неиспользуемых. Мы также должны очистить все созданные клиенты.
 	keys := []string{}
 	for i := range numThreads {
 		total.SocketCount += tcpstate[i].client.Close()
@@ -283,6 +291,7 @@ func RunTCPTest(o *RunnerOptions) (*RunnerResults, error) {
 		}
 	}
 	// Cleanup state:
+	// Очистка состояния:
 	r.Options().ReleaseRunners()
 	totalCount := float64(total.DurationHistogram.Count)
 	_, _ = fmt.Fprintf(out, "Sockets used: %d (for perfect no error run, would be %d)\n", total.SocketCount, r.Options().NumThreads)

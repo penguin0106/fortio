@@ -1,22 +1,8 @@
-// Copyright 2018 Fortio Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// Package bincommon is the common code and flag handling between the fortio
-// (fortio_main.go) and fcurl (fcurl.go) executables.
+// Пакет bincommon содержит общий код и обработку флагов между исполняемыми файлами
+// fortio (fortio_main.go) и fcurl (fcurl.go).
 package bincommon
 
-// Do not add any external dependencies we want to keep fortio minimal.
+// Не добавляйте внешние зависимости - мы хотим сохранить fortio минимальным.
 
 import (
 	"context"
@@ -34,116 +20,115 @@ import (
 	"fortio.org/safecast"
 )
 
-// FortioHook is used in fortio/cli and fortio/rapi to customize the run and introduce for instance clienttrace
-// and fortiotel access logger.
+// FortioHook используется в fortio/cli и fortio/rapi для кастомизации запуска и внедрения,
+// например, clienttrace и логгера доступа fortiotel.
 type FortioHook func(*fhttp.HTTPOptions, *periodic.RunnerOptions)
 
 var (
-	compressionFlag = flag.Bool("compression", false, "Enable HTTP compression")
-	keepAliveFlag   = flag.Bool("keepalive", true, "Keep connection alive (only for fast HTTP/1.1)")
+	compressionFlag = flag.Bool("compression", false, "Включить HTTP сжатие")
+	keepAliveFlag   = flag.Bool("keepalive", true, "Поддерживать соединение (только для быстрого HTTP/1.1)")
 	halfCloseFlag   = flag.Bool("halfclose", false,
-		"When not keepalive, whether to half close the connection (only for fast http)")
-	httpReqTimeoutFlag  = flag.Duration("timeout", fhttp.HTTPReqTimeOutDefaultValue, "Connection and read timeout value (for HTTP)")
-	stdClientFlag       = flag.Bool("stdclient", false, "Use the slower net/http standard client (slower but supports h2/h2c)")
-	http10Flag          = flag.Bool("http1.0", false, "Use HTTP/1.0 (instead of HTTP/1.1)")
-	h2Flag              = flag.Bool("h2", false, "Attempt to use HTTP/2.0 / h2 (instead of HTTP/1.1) for both TLS and h2c")
-	httpsInsecureFlag   = flag.Bool("k", false, "Do not verify certs in HTTPS/TLS/gRPC connections")
-	httpsInsecureFlagL  = flag.Bool("https-insecure", false, "Long form of the -k flag")
-	resolve             = flag.String("resolve", "", "Resolve host name to this `IP`")
+		"Когда не keepalive, выполнять ли половинное закрытие соединения (только для быстрого http)")
+	httpReqTimeoutFlag  = flag.Duration("timeout", fhttp.HTTPReqTimeOutDefaultValue, "Таймаут соединения и чтения (для HTTP)")
+	stdClientFlag       = flag.Bool("stdclient", false, "Использовать более медленный стандартный клиент net/http (медленнее, но поддерживает h2/h2c)")
+	http10Flag          = flag.Bool("http1.0", false, "Использовать HTTP/1.0 (вместо HTTP/1.1)")
+	h2Flag              = flag.Bool("h2", false, "Попытаться использовать HTTP/2.0 / h2 (вместо HTTP/1.1) как для TLS, так и для h2c")
+	httpsInsecureFlag   = flag.Bool("k", false, "Не проверять сертификаты в HTTPS/TLS/gRPC соединениях")
+	httpsInsecureFlagL  = flag.Bool("https-insecure", false, "Длинная форма флага -k")
+	resolve             = flag.String("resolve", "", "Разрешить имя хоста в этот `IP`")
 	httpOpts            fhttp.HTTPOptions
-	followRedirectsFlag = flag.Bool("L", false, "Follow redirects (implies -std-client) - do not use for load test")
-	userCredentialsFlag = flag.String("user", "", "User credentials for basic authentication (for HTTP). Input data format"+
-		" should be `user:password`")
-	contentTypeFlag = flag.String("content-type", "",
-		"Sets HTTP content type. Setting this value switches the request method from GET to POST.")
-	// PayloadSizeFlag is the value of -payload-size.
-	PayloadSizeFlag = flag.Int("payload-size", 0, "Additional random payload size, replaces -payload when set > 0,"+
-		" must be smaller than -maxpayloadsizekb. Setting this switches HTTP to POST.")
-	// PayloadFlag is the value of -payload.
-	PayloadFlag = flag.String("payload", "", "Payload string to send along")
-	// PayloadFileFlag is the value of -paylaod-file.
-	PayloadFileFlag = flag.String("payload-file", "", "File `path` to be use as payload (POST for HTTP), replaces -payload when set.")
-	// PayloadStreamFlag for streaming payload from stdin (curl only).
-	PayloadStreamFlag = flag.Bool("stream", false, "Stream payload from stdin (only for fortio curl mode)")
-	// UnixDomainSocket to use instead of regular host:port.
-	unixDomainSocketFlag = flag.String("unix-socket", "", "Unix domain socket `path` to use for physical connection")
-	// CertFlag is the flag for the path for the client custom certificate.
-	CertFlag = flag.String("cert", "", "`Path` to the certificate file to be used for client or server TLS")
-	// KeyFlag is the flag for the path for the key for the `cert`.
-	KeyFlag = flag.String("key", "", "`Path` to the key file matching the -cert")
-	// CACertFlag is the flag for the path of the custom CA to verify server certificates in client calls.
+	followRedirectsFlag = flag.Bool("L", false, "Следовать редиректам (подразумевает -std-client) - не использовать для нагрузочного тестирования")
+	userCredentialsFlag = flag.String("user", "", "Учетные данные пользователя для базовой аутентификации (для HTTP). Формат: `user:password`")
+	contentTypeFlag     = flag.String("content-type", "",
+		"Устанавливает HTTP content type. Установка этого значения переключает метод запроса с GET на POST.")
+	// PayloadSizeFlag - значение флага -payload-size.
+	PayloadSizeFlag = flag.Int("payload-size", 0, "Дополнительный размер случайной полезной нагрузки, заменяет -payload когда > 0,"+
+		" должен быть меньше -maxpayloadsizekb. Установка переключает HTTP на POST.")
+	// PayloadFlag - значение флага -payload.
+	PayloadFlag = flag.String("payload", "", "Строка полезной нагрузки для отправки")
+	// PayloadFileFlag - значение флага -payload-file.
+	PayloadFileFlag = flag.String("payload-file", "", "`Путь` к файлу для использования как полезная нагрузка (POST для HTTP), заменяет -payload когда установлен.")
+	// PayloadStreamFlag для потоковой передачи полезной нагрузки из stdin (только curl).
+	PayloadStreamFlag = flag.Bool("stream", false, "Потоковая передача полезной нагрузки из stdin (только для режима fortio curl)")
+	// UnixDomainSocket для использования вместо обычного host:port.
+	unixDomainSocketFlag = flag.String("unix-socket", "", "`Путь` к Unix domain socket для физического соединения")
+	// CertFlag - флаг для пути к клиентскому сертификату.
+	CertFlag = flag.String("cert", "", "`Путь` к файлу сертификата для клиентского или серверного TLS")
+	// KeyFlag - флаг для пути к ключу для `cert`.
+	KeyFlag = flag.String("key", "", "`Путь` к файлу ключа, соответствующего -cert")
+	// CACertFlag - флаг для пути к кастомному CA для проверки серверных сертификатов.
 	CACertFlag = flag.String("cacert", "",
-		"`Path` to a custom CA certificate file to be used for the TLS client connections, "+
-			"if empty, use https:// prefix for standard internet/system CAs")
-	mTLS = flag.Bool("mtls", false, "Require client certificate signed by -cacert for client connections")
-	// LogErrorsFlag determines if the non-OK HTTP error codes get logged as they occur or not.
-	LogErrorsFlag = flag.Bool("log-errors", true, "Log HTTP non-2xx/418 status codes as they occur")
-	// RunIDFlag is optional RunID to be present in JSON results (and default JSON result filename if not 0).
-	RunIDFlag = flag.Int64("runid", 0, "Optional RunID to add to JSON result and auto save filename, to match server mode")
-	// HelpFlag is true if help/usage is being requested by the user.
+		"`Путь` к файлу кастомного CA сертификата для TLS клиентских соединений, "+
+			"если пусто, используется https:// префикс для стандартных интернет/системных CA")
+	mTLS = flag.Bool("mtls", false, "Требовать клиентский сертификат, подписанный -cacert для клиентских соединений")
+	// LogErrorsFlag определяет, логировать ли не-OK HTTP коды по мере их возникновения.
+	LogErrorsFlag = flag.Bool("log-errors", true, "Логировать HTTP статусы не-2xx/418 по мере возникновения")
+	// RunIDFlag - опциональный RunID для JSON результатов (и имени файла по умолчанию, если не 0).
+	RunIDFlag = flag.Int64("runid", 0, "Опциональный RunID для добавления в JSON результат и авто-сохранение, для соответствия серверному режиму")
+	// HelpFlag устанавливается в true, если пользователь запросил справку.
 	warmupFlag = flag.Bool("sequential-warmup", false,
-		"http(s) runner warmup done sequentially instead of parallel. When set, restores pre 1.21 behavior")
+		"http(s) runner прогрев выполняется последовательно вместо параллельного. Восстанавливает поведение до 1.21")
 	curlHeadersStdout = flag.Bool("curl-stdout-headers", false,
-		"Restore pre 1.22 behavior where HTTP headers of the fast client are output to stdout in curl mode. now stderr by default.")
-	// ConnectionReuseRange Dynamic string flag to set the max connection reuse range.
+		"Восстановить поведение до 1.22, когда HTTP заголовки быстрого клиента выводятся в stdout в режиме curl. Теперь по умолчанию stderr.")
+	// ConnectionReuseRange - динамический строковый флаг для установки диапазона переиспользования соединений.
 	ConnectionReuseRange = dflag.Flag("connection-reuse", dflag.New("",
-		"Range `min:max` for the max number of connections to reuse for each thread, default to unlimited. "+
-			"e.g. 10:30 means randomly choose a max connection reuse threshold between 10 and 30 requests.").
+		"Диапазон `min:max` для максимального числа переиспользований соединения на поток, по умолчанию неограничен. "+
+			"Например, 10:30 означает случайный выбор порога между 10 и 30 запросами.").
 		WithValidator(ConnectionReuseRangeValidator(&httpOpts)))
-	// NoReResolveFlag is false if we want to resolve the DNS name for each new connection.
-	NoReResolveFlag = flag.Bool("no-reresolve", false, "Keep the initial DNS resolution and "+
-		"don't re-resolve when making new connections (because of error or reuse limit reached)")
-	MethodFlag = flag.String("X", "", "HTTP method to use instead of GET/POST depending on payload/content-type")
+	// NoReResolveFlag равен false, если мы хотим разрешать DNS имя для каждого нового соединения.
+	NoReResolveFlag = flag.Bool("no-reresolve", false, "Сохранить начальное DNS разрешение и "+
+		"не переразрешать при создании новых соединений (из-за ошибки или достижения лимита переиспользования)")
+	MethodFlag = flag.String("X", "", "HTTP метод для использования вместо GET/POST в зависимости от payload/content-type")
 )
 
-// SharedMain is the common part of main from fortio_main and fcurl.
-// It sets up the common flags, the rest of usage/argument/flag handling
-// is now moved to the [fortio.org/cli] and [fortio.org/scli] packages.
+// SharedMain - общая часть main из fortio_main и fcurl.
+// Настраивает общие флаги, остальная обработка использования/аргументов/флагов
+// теперь перенесена в пакеты [fortio.org/cli] и [fortio.org/scli].
 func SharedMain() {
 	flag.Func("H",
-		"Additional HTTP header(s) or gRPC metadata. Multiple `key:value` pairs can be passed using multiple -H.",
+		"Дополнительный HTTP заголовок(и) или gRPC метаданные. Несколько пар `key:value` можно передать через несколько -H.",
 		httpOpts.AddAndValidateExtraHeader)
 	flag.IntVar(&fhttp.BufferSizeKb, "httpbufferkb", fhttp.BufferSizeKb,
-		"Size of the buffer (max data size) for the optimized HTTP client in `kbytes`")
+		"Размер буфера (максимальный размер данных) для оптимизированного HTTP клиента в `килобайтах`")
 	flag.BoolVar(&fhttp.CheckConnectionClosedHeader, "httpccch", fhttp.CheckConnectionClosedHeader,
-		"Check for Connection: Close Header")
-	// FlagResolveIPType indicates which IP types to resolve.
-	// With round-robin resolution now the default, you are likely to get IPv6 which may not work if
-	// use both type (`ip`). In particular some test environments like the CI do have IPv6
-	// for localhost but fail to connect. So we made the default ip4 only.
+		"Проверять заголовок Connection: Close")
+	// FlagResolveIPType указывает какие типы IP разрешать.
+	// С round-robin разрешением по умолчанию вы, вероятно, получите IPv6, который может не работать
+	// если используете оба типа (`ip`). В частности, некоторые тестовые среды, такие как CI, имеют IPv6
+	// для localhost, но не могут подключиться. Поэтому мы сделали по умолчанию только ip4.
 	dflag.Flag("resolve-ip-type", fnet.FlagResolveIPType)
-	// FlagResolveMethod decides which method to use when multiple IPs are returned for a given name
-	// default assumes one gets all the IPs in the first call and does round-robin across these.
-	// first just picks the first answer, rr rounds robin on each answer.
+	// FlagResolveMethod решает какой метод использовать, когда для имени возвращается несколько IP.
+	// По умолчанию предполагается, что все IP получены в первом вызове и выполняется round-robin по ним.
+	// first просто берёт первый ответ, rr чередует каждый ответ.
 	dflag.Flag("dns-method", fnet.FlagResolveMethod)
 	dflag.Flag("echo-server-default-params", fhttp.DefaultEchoServerParams)
 	dflag.FlagBool("proxy-all-headers", fhttp.Fetch2CopiesAllHeader)
 	dflag.Flag("server-idle-timeout", fhttp.ServerIdleTimeout)
-	// MaxDelay is the maximum delay allowed for the echoserver responses.
-	// It is a dynamic flag with default value of 1.5s so we can test the default 1s timeout in envoy.
+	// MaxDelay - максимальная задержка для ответов echoserver.
+	// Это динамический флаг со значением по умолчанию 1.5s для тестирования таймаута 1s в envoy.
 	dflag.Flag("max-echo-delay", fhttp.MaxDelay)
-	// call [scli.ServerMain()] to complete the setup.
+	// вызовите [scli.ServerMain()] для завершения настройки.
 }
 
-// FetchURL is fetching url content and exiting with 1 upon error.
-// common part between fortio_main and fcurl.
+// FetchURL получает содержимое URL и завершается с кодом 1 при ошибке.
+// Общая часть между fortio_main и fcurl.
 func FetchURL(o *fhttp.HTTPOptions) {
-	// keepAlive could be just false when making 1 fetch, but it helps debugging
-	// the HTTP client when making a single request if using the flags
+	// keepAlive мог бы быть false при одном запросе, но это помогает
+	// отлаживать HTTP клиент при одном запросе с использованием флагов
 	o.DataWriter = os.Stdout
 	client, _ := fhttp.NewClient(o)
-	// big gotcha that nil client isn't nil interface value (!)
+	// большая ловушка: nil client не является nil interface value (!)
 	if client == nil || reflect.ValueOf(client).IsNil() {
-		os.Exit(1) // error logged already
+		os.Exit(1) // ошибка уже залогирована
 	}
 	var code int
 	var dataLen int64
 	var header uint
 	if client.HasBuffer() {
-		// Fast client
+		// Быстрый клиент
 		var data []byte
 		var headerI int
-		code, data, headerI = client.Fetch(context.Background()) //nolint:staticcheck // keep using backward compatible Fetch for now
+		code, data, headerI = client.Fetch(context.Background()) //nolint:staticcheck // сохраняем обратную совместимость Fetch пока
 		dataLen = safecast.MustConv[int64](len(data))
 		header = safecast.MustConv[uint](headerI)
 		if *curlHeadersStdout {
@@ -155,34 +140,34 @@ func FetchURL(o *fhttp.HTTPOptions) {
 	} else {
 		code, dataLen, header = client.StreamFetch(context.Background())
 	}
-	log.LogVf("Fetch result code %d, data len %d, headerlen %d", code, dataLen, header)
+	log.LogVf("Результат Fetch код %d, длина данных %d, длина заголовка %d", code, dataLen, header)
 	if code != http.StatusOK {
-		log.Errf("Error status %d", code)
+		log.Errf("Статус ошибки %d", code)
 		os.Exit(1)
 	}
 }
 
-// TLSInsecure returns true if -k or -https-insecure was passed.
+// TLSInsecure возвращает true, если был передан -k или -https-insecure.
 func TLSInsecure() bool {
 	TLSInsecure := *httpsInsecureFlag || *httpsInsecureFlagL
 	if TLSInsecure {
-		log.Infof("TLS certificates will not be verified, per flag request")
+		log.Infof("TLS сертификаты не будут проверяться, по запросу флага")
 	} else {
-		log.LogVf("Will verify TLS certificates, use -k / -https-insecure to disable")
+		log.LogVf("Будут проверяться TLS сертификаты, используйте -k / -https-insecure для отключения")
 	}
 	return TLSInsecure
 }
 
-// ConnectionReuseRangeValidator returns a validator function that checks if the connection reuse range is valid
-// and set in httpOpts.
+// ConnectionReuseRangeValidator возвращает функцию валидатора, которая проверяет корректность
+// диапазона переиспользования соединений и устанавливает его в httpOpts.
 func ConnectionReuseRangeValidator(httpOpts *fhttp.HTTPOptions) func(string) error {
 	return func(value string) error {
 		return httpOpts.ValidateAndSetConnectionReuseRange(value)
 	}
 }
 
-// SharedHTTPOptions is the flag->httpoptions transfer code shared between
-// fortio_main and fcurl. It also sets fhttp.DefaultHTTPOptions.
+// SharedHTTPOptions - код переноса флагов->httpoptions, общий между
+// fortio_main и fcurl. Также устанавливает fhttp.DefaultHTTPOptions.
 func SharedHTTPOptions() *fhttp.HTTPOptions {
 	url := strings.TrimLeft(flag.Arg(0), " \t\r\n")
 	httpOpts.URL = url
@@ -197,16 +182,16 @@ func SharedHTTPOptions() *fhttp.HTTPOptions {
 	httpOpts.Resolve = *resolve
 	httpOpts.UserCredentials = *userCredentialsFlag
 	if len(*contentTypeFlag) > 0 {
-		// only set content-type from flag if flag isn't empty as it can come also from -H content-type:...
+		// устанавливаем content-type из флага только если флаг не пустой, так как он может прийти из -H content-type:...
 		httpOpts.ContentType = *contentTypeFlag
 	}
 	if *PayloadStreamFlag {
 		httpOpts.PayloadReader = os.Stdin
 	} else {
-		// Returns nil if file read error, an empty but non nil slice if no payload is requested.
+		// Возвращает nil при ошибке чтения файла, пустой но не nil slice если полезная нагрузка не запрошена.
 		httpOpts.Payload = fnet.GeneratePayload(*PayloadFileFlag, *PayloadSizeFlag, *PayloadFlag)
 		if httpOpts.Payload == nil {
-			// Error already logged
+			// Ошибка уже залогирована
 			os.Exit(1)
 		}
 	}
